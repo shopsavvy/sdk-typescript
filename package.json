@@ -1,0 +1,56 @@
+{
+  "name": "@shopsavvy/sdk",
+  "version": "1.0.0",
+  "description": "Official TypeScript/JavaScript SDK for ShopSavvy Data API - Access product data, pricing, and price history",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint src/**/*.ts",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "shopsavvy",
+    "product-data",
+    "pricing",
+    "e-commerce",
+    "shopping",
+    "price-comparison",
+    "retail",
+    "api-client",
+    "typescript",
+    "javascript"
+  ],
+  "author": "ShopSavvy by Monolith Technologies, Inc.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shopsavvy/sdk"
+  },
+  "homepage": "https://shopsavvy.com/data",
+  "bugs": {
+    "url": "https://github.com/shopsavvy/sdk/issues"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "jest": "^29.5.0",
+    "ts-jest": "^29.1.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
