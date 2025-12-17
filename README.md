@@ -149,7 +149,7 @@ const amazonProduct = await api.getProductDetails('B08N5WRWNW')
 const urlProduct = await api.getProductDetails('https://www.amazon.com/dp/B08N5WRWNW')
 
 // Search by model number
-const modelProduct = await api.getProductDetails('iPhone-14-Pro')
+const modelProduct = await api.getProductDetails('MQ023LL/A')  // iPhone model number
 
 // Access product information
 console.log(`📦 Product: ${product.data.name}`)

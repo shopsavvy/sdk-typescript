@@ -12,29 +12,87 @@ interface ShopSavvyConfig {
     baseUrl?: string;
     timeout?: number;
 }
-interface ProductDetails {
-    product_id: string;
-    name: string;
-    brand?: string;
-    category?: string;
-    image_url?: string;
-    barcode?: string;
-    asin?: string;
-    model?: string;
-    mpn?: string;
-    description?: string;
-    identifiers?: Record<string, string>;
+/**
+ * API response metadata containing credit usage info
+ */
+interface APIMeta {
+    credits_used: number;
+    credits_remaining: number;
+    rate_limit_remaining?: number;
 }
+/**
+ * Product details from ShopSavvy API
+ */
+interface ProductDetails {
+    /** Product title */
+    title: string;
+    /** ShopSavvy product ID */
+    shopsavvy: string;
+    /** Product brand */
+    brand?: string;
+    /** Product category */
+    category?: string;
+    /** Product image URLs */
+    images?: string[];
+    /** Product barcode */
+    barcode?: string;
+    /** Amazon ASIN */
+    amazon?: string;
+    /** Product model number */
+    model?: string;
+    /** Manufacturer part number */
+    mpn?: string;
+    /** Product color */
+    color?: string;
+    /** @deprecated Use `title` instead */
+    get name(): string;
+    /** @deprecated Use `shopsavvy` instead */
+    get product_id(): string;
+    /** @deprecated Use `amazon` instead */
+    get asin(): string | undefined;
+    /** @deprecated Use `images[0]` instead */
+    get image_url(): string | undefined;
+}
+/**
+ * Product with nested offers (returned by offers endpoint)
+ */
+interface ProductWithOffers extends ProductDetails {
+    offers: Offer[];
+}
+/**
+ * Product offer from a retailer
+ */
 interface Offer {
-    offer_id: string;
-    retailer: string;
-    price: number;
-    currency: string;
-    availability: 'in_stock' | 'out_of_stock' | 'limited_stock';
-    condition: 'new' | 'used' | 'refurbished';
-    url: string;
-    shipping?: number;
-    last_updated: string;
+    /** Unique offer identifier */
+    id: string;
+    /** Retailer name */
+    retailer?: string;
+    /** Offer price */
+    price?: number;
+    /** Price currency */
+    currency?: string;
+    /** Product availability */
+    availability?: string;
+    /** Product condition */
+    condition?: string;
+    /** Link to product page */
+    URL?: string;
+    /** Marketplace seller name */
+    seller?: string;
+    /** Last update timestamp */
+    timestamp?: string;
+    /** Price history */
+    history?: Array<{
+        date: string;
+        price: number;
+        availability: string;
+    }>;
+    /** @deprecated Use `id` instead */
+    get offer_id(): string;
+    /** @deprecated Use `URL` instead */
+    get url(): string | undefined;
+    /** @deprecated Use `timestamp` instead */
+    get last_updated(): string | undefined;
 }
 interface PriceHistoryEntry {
     date: string;
@@ -52,20 +110,55 @@ interface ScheduledProduct {
     created_at: string;
     last_refreshed?: string;
 }
-interface UsageInfo {
+/**
+ * Current billing period details
+ */
+interface UsagePeriod {
+    start_date: string;
+    end_date: string;
     credits_used: number;
+    credits_limit: number;
     credits_remaining: number;
-    credits_total: number;
-    billing_period_start: string;
-    billing_period_end: string;
-    plan_name: string;
+    requests_made: number;
+}
+/**
+ * API usage information
+ */
+interface UsageInfo {
+    current_period: UsagePeriod;
+    usage_percentage: number;
+    /** @deprecated Use `current_period.credits_used` instead */
+    get credits_used(): number;
+    /** @deprecated Use `current_period.credits_remaining` instead */
+    get credits_remaining(): number;
+    /** @deprecated Use `current_period.credits_limit` instead */
+    get credits_total(): number;
+    /** @deprecated Use `current_period.start_date` instead */
+    get billing_period_start(): string;
+    /** @deprecated Use `current_period.end_date` instead */
+    get billing_period_end(): string;
+}
+interface PaginationInfo {
+    total: number;
+    limit: number;
+    offset: number;
+    returned: number;
+}
+interface ProductSearchResult {
+    success: boolean;
+    data: ProductDetails[];
+    pagination: PaginationInfo;
+    meta?: APIMeta;
+    get credits_used(): number;
+    get credits_remaining(): number;
 }
 interface APIResponse<T> {
     success: boolean;
     data: T;
+    meta?: APIMeta;
     message?: string;
-    credits_used?: number;
-    credits_remaining?: number;
+    get credits_used(): number;
+    get credits_remaining(): number;
 }
 declare class ShopSavvyDataAPI {
     private readonly apiKey;
@@ -74,21 +167,43 @@ declare class ShopSavvyDataAPI {
     constructor(config: ShopSavvyConfig);
     private request;
     /**
-     * Look up product details by identifier
+     * Search for products by keyword
      *
-     * @param identifier Product identifier (barcode, ASIN, URL, model number, or ShopSavvy product ID)
-     * @param options Optional parameters
-     * @returns Product details
+     * @param query Search query or keyword (e.g., "iphone 15 pro", "samsung tv")
+     * @param options Optional parameters for pagination
+     * @returns Search results with pagination info
      *
      * @example
      * ```typescript
-     * const product = await api.getProductDetails('012345678901')
-     * console.log(product.name)
+     * const results = await api.searchProducts('iphone 15 pro', { limit: 10 })
+     * results.data.forEach(product => console.log(product.title))
+     * ```
+     */
+    searchProducts(query: string, options?: {
+        limit?: number;
+        offset?: number;
+    }): Promise<ProductSearchResult>;
+    /**
+     * Look up product details by identifier
+     *
+     * @param identifier Product identifier (barcode, ASIN, URL, model number, product name, or ShopSavvy product ID)
+     * @param options Optional parameters
+     * @returns Product details (as array, even for single identifier)
+     *
+     * @example
+     * ```typescript
+     * // By barcode
+     * const result = await api.getProductDetails('012345678901')
+     * console.log(result.data[0].title)
+     *
+     * // By product name
+     * const result2 = await api.getProductDetails('iPhone 15 Pro')
+     * console.log(result2.data[0].name) // alias for title
      * ```
      */
     getProductDetails(identifier: string, options?: {
         format?: 'json' | 'csv';
-    }): Promise<APIResponse<ProductDetails>>;
+    }): Promise<APIResponse<ProductDetails[]>>;
     /**
      * Look up details for multiple products
      *
@@ -107,20 +222,23 @@ declare class ShopSavvyDataAPI {
     /**
      * Get current offers for a product
      *
-     * @param identifier Product identifier
+     * @param identifier Product identifier (barcode, ASIN, URL, model number, product name, or ShopSavvy product ID)
      * @param options Optional parameters
-     * @returns Current offers
+     * @returns Products with their current offers
      *
      * @example
      * ```typescript
-     * const offers = await api.getCurrentOffers('012345678901')
-     * offers.data.forEach(offer => console.log(`${offer.retailer}: $${offer.price}`))
+     * const result = await api.getCurrentOffers('012345678901')
+     * result.data.forEach(product => {
+     *   console.log(`Product: ${product.title}`)
+     *   product.offers.forEach(offer => console.log(`  ${offer.retailer}: $${offer.price}`))
+     * })
      * ```
      */
     getCurrentOffers(identifier: string, options?: {
         retailer?: string;
         format?: 'json' | 'csv';
-    }): Promise<APIResponse<Offer[]>>;
+    }): Promise<APIResponse<ProductWithOffers[]>>;
     /**
      * Get current offers for multiple products
      *
@@ -131,7 +249,7 @@ declare class ShopSavvyDataAPI {
     getCurrentOffersBatch(identifiers: string[], options?: {
         retailer?: string;
         format?: 'json' | 'csv';
-    }): Promise<APIResponse<Record<string, Offer[]>>>;
+    }): Promise<APIResponse<ProductWithOffers[]>>;
     /**
      * Get price history for a product
      *
@@ -248,9 +366,9 @@ declare class ShopSavvyDataAPI {
  * })
  *
  * const product = await api.getProductDetails('012345678901')
- * console.log(product.data.name)
+ * console.log(product.data[0].title)
  * ```
  */
 declare function createShopSavvyClient(config: ShopSavvyConfig): ShopSavvyDataAPI;
 
-export { type APIResponse, type Offer, type OfferWithHistory, type PriceHistoryEntry, type ProductDetails, type ScheduledProduct, type ShopSavvyConfig, ShopSavvyDataAPI, type UsageInfo, createShopSavvyClient, ShopSavvyDataAPI as default };
+export { type APIMeta, type APIResponse, type Offer, type OfferWithHistory, type PaginationInfo, type PriceHistoryEntry, type ProductDetails, type ProductSearchResult, type ProductWithOffers, type ScheduledProduct, type ShopSavvyConfig, ShopSavvyDataAPI, type UsageInfo, type UsagePeriod, createShopSavvyClient, ShopSavvyDataAPI as default };

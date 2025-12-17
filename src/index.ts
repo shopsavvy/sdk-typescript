@@ -1,10 +1,10 @@
 /**
  * Official TypeScript/JavaScript SDK for ShopSavvy Data API
- * 
+ *
  * This SDK provides a convenient interface to interact with the ShopSavvy Data API,
  * allowing you to access product data, pricing information, and price history
  * across thousands of retailers and millions of products.
- * 
+ *
  * @see https://shopsavvy.com/data
  */
 
@@ -14,30 +14,90 @@ export interface ShopSavvyConfig {
   timeout?: number
 }
 
-export interface ProductDetails {
-  product_id: string
-  name: string
-  brand?: string
-  category?: string
-  image_url?: string
-  barcode?: string
-  asin?: string
-  model?: string
-  mpn?: string
-  description?: string
-  identifiers?: Record<string, string>
+/**
+ * API response metadata containing credit usage info
+ */
+export interface APIMeta {
+  credits_used: number
+  credits_remaining: number
+  rate_limit_remaining?: number
 }
 
+/**
+ * Product details from ShopSavvy API
+ */
+export interface ProductDetails {
+  /** Product title */
+  title: string
+  /** ShopSavvy product ID */
+  shopsavvy: string
+  /** Product brand */
+  brand?: string
+  /** Product category */
+  category?: string
+  /** Product image URLs */
+  images?: string[]
+  /** Product barcode */
+  barcode?: string
+  /** Amazon ASIN */
+  amazon?: string
+  /** Product model number */
+  model?: string
+  /** Manufacturer part number */
+  mpn?: string
+  /** Product color */
+  color?: string
+
+  // Convenience getters (for backward compatibility)
+  /** @deprecated Use `title` instead */
+  get name(): string
+  /** @deprecated Use `shopsavvy` instead */
+  get product_id(): string
+  /** @deprecated Use `amazon` instead */
+  get asin(): string | undefined
+  /** @deprecated Use `images[0]` instead */
+  get image_url(): string | undefined
+}
+
+/**
+ * Product with nested offers (returned by offers endpoint)
+ */
+export interface ProductWithOffers extends ProductDetails {
+  offers: Offer[]
+}
+
+/**
+ * Product offer from a retailer
+ */
 export interface Offer {
-  offer_id: string
-  retailer: string
-  price: number
-  currency: string
-  availability: 'in_stock' | 'out_of_stock' | 'limited_stock'
-  condition: 'new' | 'used' | 'refurbished'
-  url: string
-  shipping?: number
-  last_updated: string
+  /** Unique offer identifier */
+  id: string
+  /** Retailer name */
+  retailer?: string
+  /** Offer price */
+  price?: number
+  /** Price currency */
+  currency?: string
+  /** Product availability */
+  availability?: string
+  /** Product condition */
+  condition?: string
+  /** Link to product page */
+  URL?: string
+  /** Marketplace seller name */
+  seller?: string
+  /** Last update timestamp */
+  timestamp?: string
+  /** Price history */
+  history?: Array<{ date: string; price: number; availability: string }>
+
+  // Convenience getters (for backward compatibility)
+  /** @deprecated Use `id` instead */
+  get offer_id(): string
+  /** @deprecated Use `URL` instead */
+  get url(): string | undefined
+  /** @deprecated Use `timestamp` instead */
+  get last_updated(): string | undefined
 }
 
 export interface PriceHistoryEntry {
@@ -59,21 +119,110 @@ export interface ScheduledProduct {
   last_refreshed?: string
 }
 
-export interface UsageInfo {
+/**
+ * Current billing period details
+ */
+export interface UsagePeriod {
+  start_date: string
+  end_date: string
   credits_used: number
+  credits_limit: number
   credits_remaining: number
-  credits_total: number
-  billing_period_start: string
-  billing_period_end: string
-  plan_name: string
+  requests_made: number
+}
+
+/**
+ * API usage information
+ */
+export interface UsageInfo {
+  current_period: UsagePeriod
+  usage_percentage: number
+
+  // Convenience getters (for backward compatibility)
+  /** @deprecated Use `current_period.credits_used` instead */
+  get credits_used(): number
+  /** @deprecated Use `current_period.credits_remaining` instead */
+  get credits_remaining(): number
+  /** @deprecated Use `current_period.credits_limit` instead */
+  get credits_total(): number
+  /** @deprecated Use `current_period.start_date` instead */
+  get billing_period_start(): string
+  /** @deprecated Use `current_period.end_date` instead */
+  get billing_period_end(): string
+}
+
+export interface PaginationInfo {
+  total: number
+  limit: number
+  offset: number
+  returned: number
+}
+
+export interface ProductSearchResult {
+  success: boolean
+  data: ProductDetails[]
+  pagination: PaginationInfo
+  meta?: APIMeta
+
+  // Convenience getters
+  get credits_used(): number
+  get credits_remaining(): number
 }
 
 export interface APIResponse<T> {
   success: boolean
   data: T
+  meta?: APIMeta
   message?: string
-  credits_used?: number
-  credits_remaining?: number
+
+  // Convenience getters
+  get credits_used(): number
+  get credits_remaining(): number
+}
+
+// Helper to safely add a getter property (skips if already exists)
+function safeDefineGetter(obj: any, prop: string, getter: () => any) {
+  if (!(prop in obj)) {
+    try {
+      Object.defineProperty(obj, prop, { get: getter, enumerable: false, configurable: true })
+    } catch {
+      // Property already exists or object is frozen - skip silently
+    }
+  }
+}
+
+// Helper to add convenience properties to objects
+function addProductAliases(product: any): ProductDetails {
+  if (!product) return product
+  safeDefineGetter(product, 'name', function(this: any) { return this.title })
+  safeDefineGetter(product, 'product_id', function(this: any) { return this.shopsavvy })
+  safeDefineGetter(product, 'asin', function(this: any) { return this.amazon })
+  safeDefineGetter(product, 'image_url', function(this: any) { return this.images?.[0] })
+  return product
+}
+
+function addOfferAliases<T extends Offer>(offer: T): T {
+  if (!offer) return offer
+  safeDefineGetter(offer, 'offer_id', function(this: any) { return this.id })
+  safeDefineGetter(offer, 'url', function(this: any) { return this.URL })
+  safeDefineGetter(offer, 'last_updated', function(this: any) { return this.timestamp })
+  return offer
+}
+
+function addUsageAliases(usage: any): UsageInfo {
+  if (!usage) return usage
+  safeDefineGetter(usage, 'credits_used', function(this: any) { return this.current_period?.credits_used ?? 0 })
+  safeDefineGetter(usage, 'credits_remaining', function(this: any) { return this.current_period?.credits_remaining ?? 0 })
+  safeDefineGetter(usage, 'credits_total', function(this: any) { return this.current_period?.credits_limit ?? 0 })
+  safeDefineGetter(usage, 'billing_period_start', function(this: any) { return this.current_period?.start_date })
+  safeDefineGetter(usage, 'billing_period_end', function(this: any) { return this.current_period?.end_date })
+  return usage
+}
+
+function addResponseAliases<T>(response: any): APIResponse<T> {
+  safeDefineGetter(response, 'credits_used', function(this: any) { return this.meta?.credits_used ?? 0 })
+  safeDefineGetter(response, 'credits_remaining', function(this: any) { return this.meta?.credits_remaining ?? 0 })
+  return response
 }
 
 export class ShopSavvyDataAPI {
@@ -97,7 +246,7 @@ export class ShopSavvyDataAPI {
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<APIResponse<T>> {
     const url = `${this.baseUrl}${endpoint}`
-    
+
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), this.timeout)
 
@@ -107,7 +256,7 @@ export class ShopSavvyDataAPI {
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
-          'User-Agent': 'ShopSavvy-TypeScript-SDK/1.0.0',
+          'User-Agent': 'ShopSavvy-TypeScript-SDK/1.0.2',
           ...options.headers,
         },
         signal: controller.signal,
@@ -121,47 +270,92 @@ export class ShopSavvyDataAPI {
         throw new Error(data.error || `HTTP ${response.status}: ${response.statusText}`)
       }
 
-      return data
+      return addResponseAliases(data)
     } catch (error) {
       clearTimeout(timeoutId)
-      
+
       if ((error as Error).name === 'AbortError') {
         throw new Error(`Request timeout after ${this.timeout}ms`)
       }
-      
+
       throw error
     }
   }
 
   /**
-   * Look up product details by identifier
-   * 
-   * @param identifier Product identifier (barcode, ASIN, URL, model number, or ShopSavvy product ID)
-   * @param options Optional parameters
-   * @returns Product details
-   * 
+   * Search for products by keyword
+   *
+   * @param query Search query or keyword (e.g., "iphone 15 pro", "samsung tv")
+   * @param options Optional parameters for pagination
+   * @returns Search results with pagination info
+   *
    * @example
    * ```typescript
-   * const product = await api.getProductDetails('012345678901')
-   * console.log(product.name)
+   * const results = await api.searchProducts('iphone 15 pro', { limit: 10 })
+   * results.data.forEach(product => console.log(product.title))
    * ```
    */
-  async getProductDetails(identifier: string, options: { format?: 'json' | 'csv' } = {}): Promise<APIResponse<ProductDetails>> {
+  async searchProducts(
+    query: string,
+    options: { limit?: number; offset?: number } = {}
+  ): Promise<ProductSearchResult> {
     const params = new URLSearchParams({
-      identifier,
+      q: query,
+      ...(options.limit && { limit: options.limit.toString() }),
+      ...(options.offset && { offset: options.offset.toString() }),
+    })
+
+    const response = await this.request<ProductDetails[]>(`/products/search?${params}`) as any
+
+    // Add aliases to each product
+    if (response.data) {
+      response.data = response.data.map(addProductAliases)
+    }
+
+    return addResponseAliases(response) as ProductSearchResult
+  }
+
+  /**
+   * Look up product details by identifier
+   *
+   * @param identifier Product identifier (barcode, ASIN, URL, model number, product name, or ShopSavvy product ID)
+   * @param options Optional parameters
+   * @returns Product details (as array, even for single identifier)
+   *
+   * @example
+   * ```typescript
+   * // By barcode
+   * const result = await api.getProductDetails('012345678901')
+   * console.log(result.data[0].title)
+   *
+   * // By product name
+   * const result2 = await api.getProductDetails('iPhone 15 Pro')
+   * console.log(result2.data[0].name) // alias for title
+   * ```
+   */
+  async getProductDetails(identifier: string, options: { format?: 'json' | 'csv' } = {}): Promise<APIResponse<ProductDetails[]>> {
+    const params = new URLSearchParams({
+      ids: identifier,
       ...(options.format && { format: options.format }),
     })
 
-    return this.request<ProductDetails>(`/products/details?${params}`)
+    const response = await this.request<ProductDetails[]>(`/products?${params}`)
+
+    // Add aliases to each product
+    if (response.data) {
+      response.data = response.data.map(addProductAliases)
+    }
+
+    return response
   }
 
   /**
    * Look up details for multiple products
-   * 
+   *
    * @param identifiers Array of product identifiers
    * @param options Optional parameters
    * @returns Array of product details
-   * 
+   *
    * @example
    * ```typescript
    * const products = await api.getProductDetailsBatch(['012345678901', 'B08N5WRWNW'])
@@ -169,68 +363,104 @@ export class ShopSavvyDataAPI {
    */
   async getProductDetailsBatch(identifiers: string[], options: { format?: 'json' | 'csv' } = {}): Promise<APIResponse<ProductDetails[]>> {
     const params = new URLSearchParams({
-      identifiers: identifiers.join(','),
+      ids: identifiers.join(','),
       ...(options.format && { format: options.format }),
     })
 
-    return this.request<ProductDetails[]>(`/products/details?${params}`)
+    const response = await this.request<ProductDetails[]>(`/products?${params}`)
+
+    // Add aliases to each product
+    if (response.data) {
+      response.data = response.data.map(addProductAliases)
+    }
+
+    return response
   }
 
   /**
    * Get current offers for a product
-   * 
-   * @param identifier Product identifier
+   *
+   * @param identifier Product identifier (barcode, ASIN, URL, model number, product name, or ShopSavvy product ID)
    * @param options Optional parameters
-   * @returns Current offers
-   * 
+   * @returns Products with their current offers
+   *
    * @example
    * ```typescript
-   * const offers = await api.getCurrentOffers('012345678901')
-   * offers.data.forEach(offer => console.log(`${offer.retailer}: $${offer.price}`))
+   * const result = await api.getCurrentOffers('012345678901')
+   * result.data.forEach(product => {
+   *   console.log(`Product: ${product.title}`)
+   *   product.offers.forEach(offer => console.log(`  ${offer.retailer}: $${offer.price}`))
+   * })
    * ```
    */
   async getCurrentOffers(
-    identifier: string, 
+    identifier: string,
     options: { retailer?: string; format?: 'json' | 'csv' } = {}
-  ): Promise<APIResponse<Offer[]>> {
+  ): Promise<APIResponse<ProductWithOffers[]>> {
     const params = new URLSearchParams({
-      identifier,
+      ids: identifier,
       ...(options.retailer && { retailer: options.retailer }),
       ...(options.format && { format: options.format }),
     })
 
-    return this.request<Offer[]>(`/products/offers?${params}`)
+    const response = await this.request<ProductWithOffers[]>(`/products/offers?${params}`)
+
+    // Add aliases to each product and offer
+    if (response.data) {
+      response.data = response.data.map(product => {
+        addProductAliases(product)
+        if (product.offers) {
+          product.offers = product.offers.map(addOfferAliases)
+        }
+        return product
+      })
+    }
+
+    return response
   }
 
   /**
    * Get current offers for multiple products
-   * 
+   *
    * @param identifiers Array of product identifiers
    * @param options Optional parameters
    * @returns Current offers for all products
    */
   async getCurrentOffersBatch(
-    identifiers: string[], 
+    identifiers: string[],
     options: { retailer?: string; format?: 'json' | 'csv' } = {}
-  ): Promise<APIResponse<Record<string, Offer[]>>> {
+  ): Promise<APIResponse<ProductWithOffers[]>> {
     const params = new URLSearchParams({
-      identifiers: identifiers.join(','),
+      ids: identifiers.join(','),
       ...(options.retailer && { retailer: options.retailer }),
       ...(options.format && { format: options.format }),
     })
 
-    return this.request<Record<string, Offer[]>>(`/products/offers?${params}`)
+    const response = await this.request<ProductWithOffers[]>(`/products/offers?${params}`)
+
+    // Add aliases to each product and offer
+    if (response.data) {
+      response.data = response.data.map(product => {
+        addProductAliases(product)
+        if (product.offers) {
+          product.offers = product.offers.map(addOfferAliases)
+        }
+        return product
+      })
+    }
+
+    return response
   }
 
   /**
    * Get price history for a product
-   * 
+   *
    * @param identifier Product identifier
    * @param startDate Start date (YYYY-MM-DD format)
    * @param endDate End date (YYYY-MM-DD format)
    * @param options Optional parameters
    * @returns Offers with price history
-   * 
+   *
    * @example
    * ```typescript
    * const history = await api.getPriceHistory('012345678901', '2024-01-01', '2024-01-31')
@@ -243,24 +473,31 @@ export class ShopSavvyDataAPI {
     options: { retailer?: string; format?: 'json' | 'csv' } = {}
   ): Promise<APIResponse<OfferWithHistory[]>> {
     const params = new URLSearchParams({
-      identifier,
+      ids: identifier,
       start_date: startDate,
       end_date: endDate,
       ...(options.retailer && { retailer: options.retailer }),
       ...(options.format && { format: options.format }),
     })
 
-    return this.request<OfferWithHistory[]>(`/products/history?${params}`)
+    const response = await this.request<OfferWithHistory[]>(`/products/offers/history?${params}`)
+
+    // Add aliases to each offer
+    if (response.data) {
+      response.data = response.data.map(addOfferAliases)
+    }
+
+    return response
   }
 
   /**
    * Schedule product monitoring
-   * 
+   *
    * @param identifier Product identifier
    * @param frequency How often to refresh ('hourly', 'daily', 'weekly')
    * @param options Optional parameters
    * @returns Scheduling confirmation
-   * 
+   *
    * @example
    * ```typescript
    * await api.scheduleProductMonitoring('012345678901', 'daily')
@@ -283,7 +520,7 @@ export class ShopSavvyDataAPI {
 
   /**
    * Schedule monitoring for multiple products
-   * 
+   *
    * @param identifiers Array of product identifiers
    * @param frequency How often to refresh
    * @param options Optional parameters
@@ -306,9 +543,9 @@ export class ShopSavvyDataAPI {
 
   /**
    * Get all scheduled products
-   * 
+   *
    * @returns List of scheduled products
-   * 
+   *
    * @example
    * ```typescript
    * const scheduled = await api.getScheduledProducts()
@@ -321,10 +558,10 @@ export class ShopSavvyDataAPI {
 
   /**
    * Remove products from monitoring schedule
-   * 
+   *
    * @param identifier Product identifier to remove
    * @returns Removal confirmation
-   * 
+   *
    * @example
    * ```typescript
    * await api.removeProductFromSchedule('012345678901')
@@ -339,7 +576,7 @@ export class ShopSavvyDataAPI {
 
   /**
    * Remove multiple products from monitoring schedule
-   * 
+   *
    * @param identifiers Array of product identifiers to remove
    * @returns Removal confirmation for all products
    */
@@ -352,9 +589,9 @@ export class ShopSavvyDataAPI {
 
   /**
    * Get API usage information
-   * 
+   *
    * @returns Current usage and credit information
-   * 
+   *
    * @example
    * ```typescript
    * const usage = await api.getUsage()
@@ -362,26 +599,33 @@ export class ShopSavvyDataAPI {
    * ```
    */
   async getUsage(): Promise<APIResponse<UsageInfo>> {
-    return this.request<UsageInfo>('/usage')
+    const response = await this.request<UsageInfo>('/usage')
+
+    // Add aliases to usage info
+    if (response.data) {
+      addUsageAliases(response.data)
+    }
+
+    return response
   }
 }
 
 /**
  * Create a new ShopSavvy Data API client
- * 
+ *
  * @param config Configuration object with API key and optional settings
  * @returns API client instance
- * 
+ *
  * @example
  * ```typescript
  * import { createShopSavvyClient } from '@shopsavvy/data-api'
- * 
+ *
  * const api = createShopSavvyClient({
  *   apiKey: 'ss_live_your_api_key_here'
  * })
- * 
+ *
  * const product = await api.getProductDetails('012345678901')
- * console.log(product.data.name)
+ * console.log(product.data[0].title)
  * ```
  */
 export function createShopSavvyClient(config: ShopSavvyConfig): ShopSavvyDataAPI {
@@ -390,4 +634,3 @@ export function createShopSavvyClient(config: ShopSavvyConfig): ShopSavvyDataAPI
 
 // Export the main class as default
 export default ShopSavvyDataAPI
-
