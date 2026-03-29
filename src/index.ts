@@ -47,6 +47,36 @@ export interface ProductDetails {
   mpn?: string
   /** Product color */
   color?: string
+  /** Shortened human-friendly title */
+  title_short?: string
+  /** URL-friendly slug */
+  slug?: string
+  /** Product descriptions keyed by retailer */
+  descriptions?: Record<string, string>
+  /** Array of category paths */
+  categories?: string[]
+  /** Product specifications keyed by retailer */
+  attributes?: Record<string, Record<string, string>>
+  /** Customer ratings keyed by retailer */
+  ratings?: Record<string, { rating_out_of_5: number; count: number }>
+  /** Expert review scores */
+  scores?: { overall?: number; customer?: number; professional?: number; justification?: string }
+  /** Computed quality scores */
+  scores_synthetic?: { overall?: number; value?: number; features?: number; reliability?: number }
+  /** Curated review summary */
+  review_summary?: { pros: string[]; cons: string[]; bottom_line: string }
+  /** Relevant search keywords */
+  keywords?: string[]
+  /** Pricing summary by currency */
+  prices_summary?: Record<string, { cheapest?: number; cheapestNew?: number; full?: number; retailers?: number }>
+  /** All known product identifiers */
+  identifiers?: Record<string, string | number>
+  /** Community engagement */
+  social?: { likes: number; dislikes: number }
+  /** When product was first added */
+  created_at?: string
+  /** When product data was last refreshed */
+  updated_at?: string
 
   // Convenience getters (for backward compatibility)
   /** @deprecated Use `title` instead */
@@ -167,6 +197,89 @@ export interface ProductSearchResult {
   // Convenience getters
   get credits_used(): number
   get credits_remaining(): number
+}
+
+/**
+ * A shopping deal with expert grading
+ */
+export interface Deal {
+  path: string
+  title: string
+  subtitle?: string
+  description?: string
+  emoji?: string
+  grade: {
+    letter: string
+    suffix?: string
+    value: number
+    justification?: string
+  }
+  pricing: {
+    current: number
+    original?: number
+    currency: string
+  }
+  retailer: {
+    name: string
+  }
+  product?: string
+  url: string
+  image?: { url: string }
+  votes: {
+    upvotes: number
+    downvotes: number
+    score: number
+  }
+  comment_count: number
+  tags?: { slug: string; display: string }[]
+  product_scores?: Record<string, number>
+  expires_at?: string
+  created_at: string
+}
+
+export interface DealsResponse {
+  success: boolean
+  deals: Deal[]
+  pagination: {
+    total: number
+    has_more: boolean
+    limit: number
+    offset: number
+  }
+  meta?: APIMeta
+}
+
+/**
+ * A TLDR product review with expert scores
+ */
+export interface TLDRReview {
+  slug: string
+  headline: string
+  pros: string[]
+  cons: string[]
+  bottom_line: string
+  scores?: {
+    overall?: number
+    customer?: number
+    professional?: number
+    justification?: string
+  }
+  scores_synthetic?: {
+    overall?: number
+    value?: number
+    features?: number
+    reliability?: number
+  }
+}
+
+export interface ReviewResponse {
+  success: boolean
+  product: {
+    path: string
+    title: string
+  }
+  review: TLDRReview | null
+  meta?: APIMeta
 }
 
 export interface APIResponse<T> {
@@ -585,6 +698,62 @@ export class ShopSavvyDataAPI {
       method: 'DELETE',
       body: JSON.stringify({ identifiers: identifiers.join(',') }),
     })
+  }
+
+  /**
+   * Browse current shopping deals with sorting, filtering, and pagination
+   *
+   * @param options Optional filters and pagination
+   * @returns List of deals with grades, pricing, and community votes
+   *
+   * @example
+   * ```typescript
+   * const deals = await api.getDeals({ sort: 'hot', limit: 10, grade: 'B' })
+   * for (const deal of deals.deals) {
+   *   console.log(`${deal.grade.letter}${deal.grade.suffix || ''} ${deal.title} - $${deal.pricing.current}`)
+   * }
+   * ```
+   */
+  async getDeals(options?: {
+    sort?: 'hot' | 'new' | 'top-hour' | 'top-day' | 'top-week'
+    limit?: number
+    offset?: number
+    category?: string
+    retailer?: string
+    tag?: string
+    min_price?: number
+    max_price?: number
+    grade?: string
+    format?: 'json' | 'csv'
+  }): Promise<DealsResponse> {
+    const params = new URLSearchParams()
+    if (options) {
+      for (const [key, value] of Object.entries(options)) {
+        if (value !== undefined) params.set(key, String(value))
+      }
+    }
+    const query = params.toString()
+    return this.request(`/deals${query ? `?${query}` : ''}`)
+  }
+
+  /**
+   * Get TLDR review for a product (pros, cons, bottom line, scores)
+   *
+   * @param identifier Product identifier (barcode, ASIN, URL, model number)
+   * @returns Expert review summary or null if no review exists
+   *
+   * @example
+   * ```typescript
+   * const result = await api.getProductReview('B09XS7JWHH')
+   * if (result.review) {
+   *   console.log('Pros:', result.review.pros.join(', '))
+   *   console.log('Cons:', result.review.cons.join(', '))
+   *   console.log('Score:', result.review.scores?.overall)
+   * }
+   * ```
+   */
+  async getProductReview(identifier: string): Promise<ReviewResponse> {
+    return this.request(`/products/reviews?id=${encodeURIComponent(identifier)}`)
   }
 
   /**
