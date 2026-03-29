@@ -51,32 +51,20 @@ export interface ProductDetails {
   title_short?: string
   /** URL-friendly slug */
   slug?: string
-  /** Product descriptions keyed by retailer */
-  descriptions?: Record<string, string>
+  /** Product description text */
+  description?: string
   /** Array of category paths */
   categories?: string[]
-  /** Product specifications keyed by retailer */
-  attributes?: Record<string, Record<string, string>>
-  /** Customer ratings keyed by retailer */
-  ratings?: Record<string, { rating_out_of_5: number; count: number }>
-  /** Expert review scores */
-  scores?: { overall?: number; customer?: number; professional?: number; justification?: string }
-  /** Computed quality scores */
-  scores_synthetic?: { overall?: number; value?: number; features?: number; reliability?: number }
-  /** Curated review summary */
-  review_summary?: { pros: string[]; cons: string[]; bottom_line: string }
+  /** Product specifications (flat key-value) */
+  attributes?: Record<string, string>
+  /** Aggregated customer rating */
+  rating?: { value: number; count: number }
+  /** Expert quality scores (0-100 scale) */
+  score?: { overall?: number; customer?: number; professional?: number; value?: number; features?: number; reliability?: number }
   /** Relevant search keywords */
   keywords?: string[]
-  /** Pricing summary by currency */
-  prices_summary?: Record<string, { cheapest?: number; cheapestNew?: number; full?: number; retailers?: number }>
   /** All known product identifiers */
   identifiers?: Record<string, string | number>
-  /** Community engagement */
-  social?: { likes: number; dislikes: number }
-  /** When product was first added */
-  created_at?: string
-  /** When product data was last refreshed */
-  updated_at?: string
 
   // Convenience getters (for backward compatibility)
   /** @deprecated Use `title` instead */
@@ -262,10 +250,6 @@ export interface TLDRReview {
     overall?: number
     customer?: number
     professional?: number
-    justification?: string
-  }
-  scores_synthetic?: {
-    overall?: number
     value?: number
     features?: number
     reliability?: number
