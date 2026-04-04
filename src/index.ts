@@ -266,6 +266,22 @@ export interface ReviewResponse {
   meta?: APIMeta
 }
 
+export interface BatchResult {
+  identifier: string
+  status: 'found' | 'not_found'
+  product: ProductDetails | null
+  offers?: Offer[]
+  review?: TLDRReview | null
+}
+
+export interface BatchResponse {
+  success: boolean
+  results?: BatchResult[]
+  summary?: { total: number; found: number; not_found: number }
+  batch?: { id: string; status: string; total: number; processed: number; poll_url: string }
+  meta?: APIMeta
+}
+
 export interface APIResponse<T> {
   success: boolean
   data: T
@@ -738,6 +754,41 @@ export class ShopSavvyDataAPI {
    */
   async getProductReview(identifier: string): Promise<ReviewResponse> {
     return this.request(`/products/reviews?id=${encodeURIComponent(identifier)}`)
+  }
+
+  /**
+   * Look up multiple products at once
+   *
+   * @param identifiers Array of product identifiers (max 100)
+   * @param options Optional: include offers and/or reviews alongside products
+   * @returns Batch results (sync for <=20, async batch_id for >20)
+   *
+   * @example
+   * ```typescript
+   * const result = await api.batchLookup(['B09XS7JWHH', 'B0CHX3TW6K'], { include: ['offers'] })
+   * for (const item of result.results ?? []) {
+   *   if (item.status === 'found') console.log(item.product?.title)
+   * }
+   * ```
+   */
+  async batchLookup(
+    identifiers: string[],
+    options?: { include?: ('offers' | 'reviews')[] }
+  ): Promise<BatchResponse> {
+    return this.request('/products/batch', {
+      method: 'POST',
+      body: JSON.stringify({ identifiers, include: options?.include }),
+    })
+  }
+
+  /**
+   * Poll for async batch job results
+   *
+   * @param batchId The batch job ID from a previous batchLookup call
+   * @returns Current batch status and results when complete
+   */
+  async getBatchStatus(batchId: string): Promise<BatchResponse> {
+    return this.request(`/batch/${batchId}`)
   }
 
   /**
