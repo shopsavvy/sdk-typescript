@@ -791,6 +791,28 @@ export class ShopSavvyDataAPI {
     return this.request(`/batch/${batchId}`)
   }
 
+  // ---- Webhooks ----
+
+  /** Create a webhook to receive event notifications */
+  async createWebhook(url: string, events: ('price_drop' | 'availability_change' | 'schedule_completion')[]): Promise<any> {
+    return this.request('/webhooks', { method: 'POST', body: JSON.stringify({ url, events }) })
+  }
+
+  /** List all webhooks for your account */
+  async listWebhooks(): Promise<any> {
+    return this.request('/webhooks')
+  }
+
+  /** Send a test event to a webhook */
+  async testWebhook(webhookId: string): Promise<any> {
+    return this.request(`/webhooks/${webhookId}/test`, { method: 'POST' })
+  }
+
+  /** Delete a webhook */
+  async deleteWebhook(webhookId: string): Promise<any> {
+    return this.request(`/webhooks/${webhookId}`, { method: 'DELETE' })
+  }
+
   /**
    * Get API usage information
    *
