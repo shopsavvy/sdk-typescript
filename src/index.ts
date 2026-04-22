@@ -733,7 +733,7 @@ export class ShopSavvyDataAPI {
       }
     }
     const query = params.toString()
-    return this.request(`/deals${query ? `?${query}` : ''}`)
+    return this.request(`/deals${query ? `?${query}` : ''}`) as unknown as Promise<DealsResponse>
   }
 
   /**
@@ -753,7 +753,7 @@ export class ShopSavvyDataAPI {
    * ```
    */
   async getProductReview(identifier: string): Promise<ReviewResponse> {
-    return this.request(`/products/reviews?id=${encodeURIComponent(identifier)}`)
+    return this.request(`/products/reviews?id=${encodeURIComponent(identifier)}`) as unknown as Promise<ReviewResponse>
   }
 
   /**
