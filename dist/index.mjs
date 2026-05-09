@@ -354,6 +354,96 @@ var ShopSavvyDataAPI = class {
     });
   }
   /**
+   * Browse current shopping deals with sorting, filtering, and pagination
+   *
+   * @param options Optional filters and pagination
+   * @returns List of deals with grades, pricing, and community votes
+   *
+   * @example
+   * ```typescript
+   * const deals = await api.getDeals({ sort: 'hot', limit: 10, grade: 'B' })
+   * for (const deal of deals.deals) {
+   *   console.log(`${deal.grade.letter}${deal.grade.suffix || ''} ${deal.title} - $${deal.pricing.current}`)
+   * }
+   * ```
+   */
+  async getDeals(options) {
+    const params = new URLSearchParams();
+    if (options) {
+      for (const [key, value] of Object.entries(options)) {
+        if (value !== void 0) params.set(key, String(value));
+      }
+    }
+    const query = params.toString();
+    return this.request(`/deals${query ? `?${query}` : ""}`);
+  }
+  /**
+   * Get TLDR review for a product (pros, cons, bottom line, scores)
+   *
+   * @param identifier Product identifier (barcode, ASIN, URL, model number)
+   * @returns Expert review summary or null if no review exists
+   *
+   * @example
+   * ```typescript
+   * const result = await api.getProductReview('B09XS7JWHH')
+   * if (result.review) {
+   *   console.log('Pros:', result.review.pros.join(', '))
+   *   console.log('Cons:', result.review.cons.join(', '))
+   *   console.log('Score:', result.review.scores?.overall)
+   * }
+   * ```
+   */
+  async getProductReview(identifier) {
+    return this.request(`/products/reviews?id=${encodeURIComponent(identifier)}`);
+  }
+  /**
+   * Look up multiple products at once
+   *
+   * @param identifiers Array of product identifiers (max 100)
+   * @param options Optional: include offers and/or reviews alongside products
+   * @returns Batch results (sync for <=20, async batch_id for >20)
+   *
+   * @example
+   * ```typescript
+   * const result = await api.batchLookup(['B09XS7JWHH', 'B0CHX3TW6K'], { include: ['offers'] })
+   * for (const item of result.results ?? []) {
+   *   if (item.status === 'found') console.log(item.product?.title)
+   * }
+   * ```
+   */
+  async batchLookup(identifiers, options) {
+    return this.request("/products/batch", {
+      method: "POST",
+      body: JSON.stringify({ identifiers, include: options?.include })
+    });
+  }
+  /**
+   * Poll for async batch job results
+   *
+   * @param batchId The batch job ID from a previous batchLookup call
+   * @returns Current batch status and results when complete
+   */
+  async getBatchStatus(batchId) {
+    return this.request(`/batch/${batchId}`);
+  }
+  // ---- Webhooks ----
+  /** Create a webhook to receive event notifications */
+  async createWebhook(url, events) {
+    return this.request("/webhooks", { method: "POST", body: JSON.stringify({ url, events }) });
+  }
+  /** List all webhooks for your account */
+  async listWebhooks() {
+    return this.request("/webhooks");
+  }
+  /** Send a test event to a webhook */
+  async testWebhook(webhookId) {
+    return this.request(`/webhooks/${webhookId}/test`, { method: "POST" });
+  }
+  /** Delete a webhook */
+  async deleteWebhook(webhookId) {
+    return this.request(`/webhooks/${webhookId}`, { method: "DELETE" });
+  }
+  /**
    * Get API usage information
    *
    * @returns Current usage and credit information

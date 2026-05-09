@@ -44,6 +44,34 @@ interface ProductDetails {
     mpn?: string;
     /** Product color */
     color?: string;
+    /** Shortened human-friendly title */
+    title_short?: string;
+    /** URL-friendly slug */
+    slug?: string;
+    /** Product description text */
+    description?: string;
+    /** Array of category paths */
+    categories?: string[];
+    /** Product specifications (flat key-value) */
+    attributes?: Record<string, string>;
+    /** Aggregated customer rating */
+    rating?: {
+        value: number;
+        count: number;
+    };
+    /** Expert quality scores (0-100 scale) */
+    score?: {
+        overall?: number;
+        customer?: number;
+        professional?: number;
+        value?: number;
+        features?: number;
+        reliability?: number;
+    };
+    /** Relevant search keywords */
+    keywords?: string[];
+    /** All known product identifiers */
+    identifiers?: Record<string, string | number>;
     /** @deprecated Use `title` instead */
     get name(): string;
     /** @deprecated Use `shopsavvy` instead */
@@ -151,6 +179,110 @@ interface ProductSearchResult {
     meta?: APIMeta;
     get credits_used(): number;
     get credits_remaining(): number;
+}
+/**
+ * A shopping deal with expert grading
+ */
+interface Deal {
+    path: string;
+    title: string;
+    subtitle?: string;
+    description?: string;
+    emoji?: string;
+    grade: {
+        letter: string;
+        suffix?: string;
+        value: number;
+        justification?: string;
+    };
+    pricing: {
+        current: number;
+        original?: number;
+        currency: string;
+    };
+    retailer: {
+        name: string;
+    };
+    product?: string;
+    url: string;
+    image?: {
+        url: string;
+    };
+    votes: {
+        upvotes: number;
+        downvotes: number;
+        score: number;
+    };
+    comment_count: number;
+    tags?: {
+        slug: string;
+        display: string;
+    }[];
+    product_scores?: Record<string, number>;
+    expires_at?: string;
+    created_at: string;
+}
+interface DealsResponse {
+    success: boolean;
+    deals: Deal[];
+    pagination: {
+        total: number;
+        has_more: boolean;
+        limit: number;
+        offset: number;
+    };
+    meta?: APIMeta;
+}
+/**
+ * A TLDR product review with expert scores
+ */
+interface TLDRReview {
+    slug: string;
+    headline: string;
+    pros: string[];
+    cons: string[];
+    bottom_line: string;
+    scores?: {
+        overall?: number;
+        customer?: number;
+        professional?: number;
+        value?: number;
+        features?: number;
+        reliability?: number;
+    };
+}
+interface ReviewResponse {
+    success: boolean;
+    product: {
+        path: string;
+        title: string;
+    };
+    review: TLDRReview | null;
+    meta?: APIMeta;
+}
+interface BatchResult {
+    identifier: string;
+    status: 'found' | 'not_found';
+    product: ProductDetails | null;
+    offers?: Offer[];
+    review?: TLDRReview | null;
+}
+interface BatchResponse {
+    success: boolean;
+    results?: BatchResult[];
+    summary?: {
+        total: number;
+        found: number;
+        not_found: number;
+    };
+    batch?: {
+        id: string;
+        status: string;
+        total: number;
+        processed: number;
+        poll_url: string;
+    };
+    meta?: APIMeta;
 }
 interface APIResponse<T> {
     success: boolean;
@@ -339,6 +471,82 @@ declare class ShopSavvyDataAPI {
         removed: boolean;
     }>>>;
     /**
+     * Browse current shopping deals with sorting, filtering, and pagination
+     *
+     * @param options Optional filters and pagination
+     * @returns List of deals with grades, pricing, and community votes
+     *
+     * @example
+     * ```typescript
+     * const deals = await api.getDeals({ sort: 'hot', limit: 10, grade: 'B' })
+     * for (const deal of deals.deals) {
+     *   console.log(`${deal.grade.letter}${deal.grade.suffix || ''} ${deal.title} - $${deal.pricing.current}`)
+     * }
+     * ```
+     */
+    getDeals(options?: {
+        sort?: 'hot' | 'new' | 'top-hour' | 'top-day' | 'top-week';
+        limit?: number;
+        offset?: number;
+        category?: string;
+        retailer?: string;
+        tag?: string;
+        min_price?: number;
+        max_price?: number;
+        grade?: string;
+        format?: 'json' | 'csv';
+    }): Promise<DealsResponse>;
+    /**
+     * Get TLDR review for a product (pros, cons, bottom line, scores)
+     *
+     * @param identifier Product identifier (barcode, ASIN, URL, model number)
+     * @returns Expert review summary or null if no review exists
+     *
+     * @example
+     * ```typescript
+     * const result = await api.getProductReview('B09XS7JWHH')
+     * if (result.review) {
+     *   console.log('Pros:', result.review.pros.join(', '))
+     *   console.log('Cons:', result.review.cons.join(', '))
+     *   console.log('Score:', result.review.scores?.overall)
+     * }
+     * ```
+     */
+    getProductReview(identifier: string): Promise<ReviewResponse>;
+    /**
+     * Look up multiple products at once
+     *
+     * @param identifiers Array of product identifiers (max 100)
+     * @param options Optional: include offers and/or reviews alongside products
+     * @returns Batch results (sync for <=20, async batch_id for >20)
+     *
+     * @example
+     * ```typescript
+     * const result = await api.batchLookup(['B09XS7JWHH', 'B0CHX3TW6K'], { include: ['offers'] })
+     * for (const item of result.results ?? []) {
+     *   if (item.status === 'found') console.log(item.product?.title)
+     * }
+     * ```
+     */
+    batchLookup(identifiers: string[], options?: {
+        include?: ('offers' | 'reviews')[];
+    }): Promise<BatchResponse>;
+    /**
+     * Poll for async batch job results
+     *
+     * @param batchId The batch job ID from a previous batchLookup call
+     * @returns Current batch status and results when complete
+     */
+    getBatchStatus(batchId: string): Promise<BatchResponse>;
+    /** Create a webhook to receive event notifications */
+    createWebhook(url: string, events: ('price_drop' | 'availability_change' | 'schedule_completion')[]): Promise<any>;
+    /** List all webhooks for your account */
+    listWebhooks(): Promise<any>;
+    /** Send a test event to a webhook */
+    testWebhook(webhookId: string): Promise<any>;
+    /** Delete a webhook */
+    deleteWebhook(webhookId: string): Promise<any>;
+    /**
      * Get API usage information
      *
      * @returns Current usage and credit information
@@ -371,4 +579,4 @@ declare class ShopSavvyDataAPI {
  */
 declare function createShopSavvyClient(config: ShopSavvyConfig): ShopSavvyDataAPI;
 
-export { type APIMeta, type APIResponse, type Offer, type OfferWithHistory, type PaginationInfo, type PriceHistoryEntry, type ProductDetails, type ProductSearchResult, type ProductWithOffers, type ScheduledProduct, type ShopSavvyConfig, ShopSavvyDataAPI, type UsageInfo, type UsagePeriod, createShopSavvyClient, ShopSavvyDataAPI as default };
+export { type APIMeta, type APIResponse, type BatchResponse, type BatchResult, type Deal, type DealsResponse, type Offer, type OfferWithHistory, type PaginationInfo, type PriceHistoryEntry, type ProductDetails, type ProductSearchResult, type ProductWithOffers, type ReviewResponse, type ScheduledProduct, type ShopSavvyConfig, ShopSavvyDataAPI, type TLDRReview, type UsageInfo, type UsagePeriod, createShopSavvyClient, ShopSavvyDataAPI as default };
