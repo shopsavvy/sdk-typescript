@@ -29,8 +29,7 @@ bun add @shopsavvy/sdk
 
 1. 🌟 Visit [shopsavvy.com/data](https://shopsavvy.com/data)
 2. 📝 Sign up for a free account
-3. 💳 Choose a subscription plan
-4. 🔑 Get your API key from the dashboard
+3. 🔑 Get your API key from the dashboard
 
 ### 30-Second Example
 
