@@ -808,6 +808,28 @@ export class ShopSavvyDataAPI {
     return this.request(`/webhooks/${webhookId}/test`, { method: 'POST' })
   }
 
+  /**
+   * Update a webhook. All fields are optional, but at least one of `url`,
+   * `events`, or `isActive` must be provided.
+   */
+  async updateWebhook(
+    webhookId: string,
+    options: {
+      url?: string
+      events?: ('price_drop' | 'availability_change' | 'schedule_completion')[]
+      isActive?: boolean
+    }
+  ): Promise<any> {
+    if (options.url === undefined && options.events === undefined && options.isActive === undefined) {
+      throw new Error('updateWebhook requires at least one of url, events, or isActive')
+    }
+    const body: Record<string, unknown> = {}
+    if (options.url !== undefined) body.url = options.url
+    if (options.events !== undefined) body.events = options.events
+    if (options.isActive !== undefined) body.is_active = options.isActive
+    return this.request(`/webhooks/${webhookId}`, { method: 'PUT', body: JSON.stringify(body) })
+  }
+
   /** Delete a webhook */
   async deleteWebhook(webhookId: string): Promise<any> {
     return this.request(`/webhooks/${webhookId}`, { method: 'DELETE' })
