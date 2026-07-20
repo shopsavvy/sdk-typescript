@@ -59,8 +59,13 @@ export interface ProductDetails {
   attributes?: Record<string, string>
   /** Aggregated customer rating */
   rating?: { value: number; count: number }
-  /** Expert quality scores (0-100 scale) */
-  score?: { overall?: number; customer?: number; professional?: number; value?: number; features?: number; reliability?: number }
+  /**
+   * Expert quality scores (0-1 scale — multiply by 10 or 100 for display).
+   * `aspects` is keyed by free-form aspect names drawn from the product's
+   * professional reviews (e.g. value, features, reliability, quality) — the
+   * set of aspects varies per product.
+   */
+  score?: { overall?: number; customer?: number; professional?: number; aspects?: Record<string, number> }
   /** Relevant search keywords */
   keywords?: string[]
   /** All known product identifiers */
@@ -246,13 +251,16 @@ export interface TLDRReview {
   pros: string[]
   cons: string[]
   bottom_line: string
+  /**
+   * Expert quality scores (0-1 scale — multiply by 10 or 100 for display).
+   * `aspects` is keyed by free-form aspect names drawn from the product's
+   * professional reviews — the set of aspects varies per product.
+   */
   scores?: {
     overall?: number
     customer?: number
     professional?: number
-    value?: number
-    features?: number
-    reliability?: number
+    aspects?: Record<string, number>
   }
 }
 
