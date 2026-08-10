@@ -136,6 +136,8 @@ export interface PriceHistoryEntry {
   /** ISO-8601 timestamp of the observation. */
   timestamp: string
   price: number
+  /** The ISO 4217 currency the price is denominated in. Null on an archived point with no recorded currency — never assume a missing value means USD (ShopSavvy prospector-audit d5-t3-1). */
+  currency?: string | null
   availability?: string
 }
 
