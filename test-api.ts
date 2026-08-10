@@ -65,6 +65,26 @@ async function test() {
   assert(search.data[0]?.name === search.data[0]?.title, 'search result name alias works')
   console.log('')
 
+  // Test 5: Price history endpoint
+  //
+  // This harness previously exercised products/offers/usage/search but never
+  // price history — which is exactly why nobody caught that every SDK sent
+  // `start_date`/`end_date` while the endpoint requires `start`/`end`, for over
+  // a year, in all 10 languages. A 400 here means the wire params drifted again.
+  console.log('--- 5. getPriceHistory ---')
+  const historyEnd = new Date()
+  const historyStart = new Date(historyEnd.getTime() - 30 * 24 * 60 * 60 * 1000)
+  const dateOnly = (d: Date) => d.toISOString().slice(0, 10)
+  const history = await api.getPriceHistory(
+    'B0BDHWDR12',
+    dateOnly(historyStart),
+    dateOnly(historyEnd)
+  )
+  assert(history.success === true, 'history.success is true (a 400 here means start/end drifted again)')
+  assert(Array.isArray(history.data), 'history.data is an array')
+  assert(typeof history.meta?.credits_used === 'number', 'history meta.credits_used is number')
+  console.log('')
+
   // Summary
   console.log('=================================')
   if (failures === 0) {

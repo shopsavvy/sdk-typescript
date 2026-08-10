@@ -593,10 +593,14 @@ export class ShopSavvyDataAPI {
     endDate: string,
     options: { retailer?: string; format?: 'json' | 'csv' } = {}
   ): Promise<APIResponse<OfferWithHistory[]>> {
+    // Wire params are `start`/`end` — that is what GET /products/offers/history
+    // reads, and what the OpenAPI spec and public docs document. The old
+    // `start_date`/`end_date` names came from the MCP tool's argument
+    // convention (a different interface entirely) and 400'd every call.
     const params = new URLSearchParams({
       ids: identifier,
-      start_date: startDate,
-      end_date: endDate,
+      start: startDate,
+      end: endDate,
       ...(options.retailer && { retailer: options.retailer }),
       ...(options.format && { format: options.format }),
     })
