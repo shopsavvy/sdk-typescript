@@ -252,10 +252,10 @@ const history = await api.getPriceHistory('012345678901', startDate, endDate)
 for (const offer of history.data) {
   console.log(`🏪 ${offer.retailer}:`)
   console.log(`   💰 Current price: $${offer.price}`)
-  console.log(`   📊 Historical points: ${offer.price_history.length}`)
+  console.log(`   📊 Historical points: ${offer.history.length}`)
   
-  if (offer.price_history.length > 0) {
-    const prices = offer.price_history.map(point => point.price)
+  if (offer.history.length > 0) {
+    const prices = offer.history.map(point => point.price)
     console.log(`   📉 Lowest: $${Math.min(...prices)}`)
     console.log(`   📈 Highest: $${Math.max(...prices)}`)
     console.log(`   📊 Average: $${(prices.reduce((a, b) => a + b, 0) / prices.length).toFixed(2)}`)
@@ -277,9 +277,9 @@ const amazonHistory = await api.getPriceHistory(
 for (const offer of amazonHistory.data) {
   console.log(`Amazon price trends for ${offer.retailer}:`)
   // Last 10 data points
-  const recentHistory = offer.price_history.slice(-10)
+  const recentHistory = offer.history.slice(-10)
   for (const point of recentHistory) {
-    console.log(`  ${point.date}: $${point.price} (${point.availability})`)
+    console.log(`  ${point.timestamp}: $${point.price} (${point.availability})`)
   }
 }
 ```
@@ -617,9 +617,9 @@ async function analyzeMarketTrends(identifiers: string[], days = 30): Promise<Ma
       const retailerStats: Record<string, RetailerStats> = {}
       
       for (const offer of history.data) {
-        if (offer.price_history.length === 0) continue
+        if (offer.history.length === 0) continue
         
-        const prices = offer.price_history.map(point => point.price)
+        const prices = offer.history.map(point => point.price)
         const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length
         const variance = prices.reduce((a, b) => a + Math.pow(b - avgPrice, 2), 0) / prices.length
         
@@ -1423,8 +1423,8 @@ class BusinessIntelligenceDashboard {
         const history = await this.api.getPriceHistory(productId, startDate, endDate)
 
         for (const offerHistory of history.data) {
-          if (offerHistory.price_history.length > 0) {
-            const prices = offerHistory.price_history.map(p => p.price)
+          if (offerHistory.history.length > 0) {
+            const prices = offerHistory.history.map(p => p.price)
             const trend = this.calculateTrendPercentage(prices)
             priceTrends.push(trend)
           }

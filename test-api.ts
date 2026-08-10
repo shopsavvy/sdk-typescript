@@ -83,6 +83,18 @@ async function test() {
   assert(history.success === true, 'history.success is true (a 400 here means start/end drifted again)')
   assert(Array.isArray(history.data), 'history.data is an array')
   assert(typeof history.meta?.credits_used === 'number', 'history meta.credits_used is number')
+
+  // SHAPE assertion, not just a status check. A 200 whose history points are typed under the
+  // wrong key is the second, independent way this endpoint was broken in all 10 SDKs: the
+  // types declared `price_history[].date`, the API has only ever sent `history[].timestamp`.
+  // Statically-typed SDKs returned silent empties (Go/Java/C#/PHP/Ruby) or hard
+  // deserialization failures (Rust, Python, Swift, Kotlin) on a perfectly good response.
+  const offerWithPoints = history.data.find((offer) => (offer.history?.length ?? 0) > 0)
+  assert(offerWithPoints !== undefined, 'at least one returned offer carries history points')
+  const point = offerWithPoints?.history?.[0]
+  assert(typeof point?.timestamp === 'string', 'history[0].timestamp is a string (NOT `date`)')
+  assert(!Number.isNaN(Date.parse(point?.timestamp ?? '')), 'history[0].timestamp parses as a date')
+  assert(typeof point?.price === 'number', 'history[0].price is a number')
   console.log('')
 
   // Summary

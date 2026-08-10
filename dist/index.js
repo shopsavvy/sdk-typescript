@@ -284,8 +284,8 @@ var ShopSavvyDataAPI = class {
   async getPriceHistory(identifier, startDate, endDate, options = {}) {
     const params = new URLSearchParams({
       ids: identifier,
-      start_date: startDate,
-      end_date: endDate,
+      start: startDate,
+      end: endDate,
       ...options.retailer && { retailer: options.retailer },
       ...options.format && { format: options.format }
     });
@@ -464,6 +464,20 @@ var ShopSavvyDataAPI = class {
   /** Send a test event to a webhook */
   async testWebhook(webhookId) {
     return this.request(`/webhooks/${webhookId}/test`, { method: "POST" });
+  }
+  /**
+   * Update a webhook. All fields are optional, but at least one of `url`,
+   * `events`, or `isActive` must be provided.
+   */
+  async updateWebhook(webhookId, options) {
+    if (options.url === void 0 && options.events === void 0 && options.isActive === void 0) {
+      throw new Error("updateWebhook requires at least one of url, events, or isActive");
+    }
+    const body = {};
+    if (options.url !== void 0) body.url = options.url;
+    if (options.events !== void 0) body.events = options.events;
+    if (options.isActive !== void 0) body.is_active = options.isActive;
+    return this.request(`/webhooks/${webhookId}`, { method: "PUT", body: JSON.stringify(body) });
   }
   /** Delete a webhook */
   async deleteWebhook(webhookId) {

@@ -59,14 +59,17 @@ interface ProductDetails {
         value: number;
         count: number;
     };
-    /** Expert quality scores (0-100 scale) */
+    /**
+     * Expert quality scores (0-1 scale — multiply by 10 or 100 for display).
+     * `aspects` is keyed by free-form aspect names drawn from the product's
+     * professional reviews (e.g. value, features, reliability, quality) — the
+     * set of aspects varies per product.
+     */
     score?: {
         overall?: number;
         customer?: number;
         professional?: number;
-        value?: number;
-        features?: number;
-        reliability?: number;
+        aspects?: Record<string, number>;
     };
     /** Relevant search keywords */
     keywords?: string[];
@@ -109,12 +112,8 @@ interface Offer {
     seller?: string;
     /** Last update timestamp */
     timestamp?: string;
-    /** Price history */
-    history?: Array<{
-        date: string;
-        price: number;
-        availability: string;
-    }>;
+    /** Price history. Only populated by getPriceHistory(). */
+    history?: PriceHistoryEntry[];
     /** @deprecated Use `id` instead */
     get offer_id(): string;
     /** @deprecated Use `URL` instead */
@@ -122,13 +121,31 @@ interface Offer {
     /** @deprecated Use `timestamp` instead */
     get last_updated(): string | undefined;
 }
+/**
+ * One historical price observation.
+ *
+ * The timestamp field is `timestamp`, matching the parent Offer's own `timestamp` and the
+ * real wire shape (`{ availability, price, timestamp }`). It was declared as `date` in every
+ * SDK in the fleet until 2026-08-10 — a name the API has never sent — so this value read as
+ * empty/undefined for every consumer who followed the types (ShopSavvy prospector-audit
+ * s28-t2-2 / s28-t2-3).
+ */
 interface PriceHistoryEntry {
-    date: string;
+    /** ISO-8601 timestamp of the observation. */
+    timestamp: string;
     price: number;
-    availability: string;
+    availability?: string;
 }
+/**
+ * An offer returned by getPriceHistory(), i.e. one carrying its `history` array.
+ *
+ * This used to declare a `price_history` field. The API has never sent a key by that name —
+ * history has always arrived under `history` — so `price_history` was permanently `undefined`
+ * despite being typed non-optional. Removing it cannot break working code: no caller could
+ * ever have read data out of it.
+ */
 interface OfferWithHistory extends Offer {
-    price_history: PriceHistoryEntry[];
+    history: PriceHistoryEntry[];
 }
 interface ScheduledProduct {
     product_id: string;
@@ -242,13 +259,16 @@ interface TLDRReview {
     pros: string[];
     cons: string[];
     bottom_line: string;
+    /**
+     * Expert quality scores (0-1 scale — multiply by 10 or 100 for display).
+     * `aspects` is keyed by free-form aspect names drawn from the product's
+     * professional reviews — the set of aspects varies per product.
+     */
     scores?: {
         overall?: number;
         customer?: number;
         professional?: number;
-        value?: number;
-        features?: number;
-        reliability?: number;
+        aspects?: Record<string, number>;
     };
 }
 interface ReviewResponse {
@@ -544,6 +564,15 @@ declare class ShopSavvyDataAPI {
     listWebhooks(): Promise<any>;
     /** Send a test event to a webhook */
     testWebhook(webhookId: string): Promise<any>;
+    /**
+     * Update a webhook. All fields are optional, but at least one of `url`,
+     * `events`, or `isActive` must be provided.
+     */
+    updateWebhook(webhookId: string, options: {
+        url?: string;
+        events?: ('price_drop' | 'availability_change' | 'schedule_completion')[];
+        isActive?: boolean;
+    }): Promise<any>;
     /** Delete a webhook */
     deleteWebhook(webhookId: string): Promise<any>;
     /**
