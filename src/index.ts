@@ -387,6 +387,22 @@ function addResponseAliases<T>(response: any): APIResponse<T> {
   return response
 }
 
+/**
+ * Query string for PUT /products/scheduled.
+ *
+ * The API's schedule/unschedule handlers read ONLY the query string (`ids`, `schedule`,
+ * `retailer`) — a JSON body is ignored. Through 1.3.0 this SDK POSTed/DELETEd a JSON body
+ * (`identifier`/`identifiers`/`frequency`) to /products/schedule, so every call failed with
+ * a missing-`ids` error. The frequency parameter is named `schedule` on the wire.
+ */
+function scheduleParams(identifiers: string[], frequency: string, retailer?: string): URLSearchParams {
+  return new URLSearchParams({
+    ids: identifiers.join(','),
+    schedule: frequency,
+    ...(retailer && { retailer }),
+  })
+}
+
 /** SDK version, sent in the User-Agent header. Keep in sync with package.json. */
 export const SDK_VERSION = '1.4.0'
 
@@ -693,14 +709,7 @@ export class ShopSavvyDataAPI {
     frequency: 'hourly' | 'daily' | 'weekly',
     options: { retailer?: string } = {}
   ): Promise<APIResponse<{ scheduled: boolean; product_id: string }>> {
-    return this.request(`/products/schedule`, {
-      method: 'POST',
-      body: JSON.stringify({
-        identifier,
-        frequency,
-        ...(options.retailer && { retailer: options.retailer }),
-      }),
-    })
+    return this.request(`/products/scheduled?${scheduleParams([identifier], frequency, options.retailer)}`, { method: 'PUT' })
   }
 
   /**
@@ -716,14 +725,7 @@ export class ShopSavvyDataAPI {
     frequency: 'hourly' | 'daily' | 'weekly',
     options: { retailer?: string } = {}
   ): Promise<APIResponse<Array<{ identifier: string; scheduled: boolean; product_id: string }>>> {
-    return this.request(`/products/schedule`, {
-      method: 'POST',
-      body: JSON.stringify({
-        identifiers: identifiers.join(','),
-        frequency,
-        ...(options.retailer && { retailer: options.retailer }),
-      }),
-    })
+    return this.request(`/products/scheduled?${scheduleParams(identifiers, frequency, options.retailer)}`, { method: 'PUT' })
   }
 
   /**
@@ -753,10 +755,7 @@ export class ShopSavvyDataAPI {
    * ```
    */
   async removeProductFromSchedule(identifier: string): Promise<APIResponse<{ removed: boolean }>> {
-    return this.request(`/products/schedule`, {
-      method: 'DELETE',
-      body: JSON.stringify({ identifier }),
-    })
+    return this.request(`/products/scheduled?${new URLSearchParams({ ids: identifier })}`, { method: 'DELETE' })
   }
 
   /**
@@ -766,10 +765,7 @@ export class ShopSavvyDataAPI {
    * @returns Removal confirmation for all products
    */
   async removeProductsFromSchedule(identifiers: string[]): Promise<APIResponse<Array<{ identifier: string; removed: boolean }>>> {
-    return this.request(`/products/schedule`, {
-      method: 'DELETE',
-      body: JSON.stringify({ identifiers: identifiers.join(',') }),
-    })
+    return this.request(`/products/scheduled?${new URLSearchParams({ ids: identifiers.join(',') })}`, { method: 'DELETE' })
   }
 
   /**

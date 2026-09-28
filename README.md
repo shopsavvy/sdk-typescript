@@ -323,8 +323,8 @@ if (result.data.scheduled) {
 // Monitor hourly at specific retailer
 const amazonResult = await api.scheduleProductMonitoring(
   '012345678901', 
-  'hourly', 
-  { retailer: 'amazon' }
+  'hourly',
+  { retailer: 'amazon.com' } // a retailer domain
 )
 console.log(`Amazon monitoring: ${JSON.stringify(amazonResult.data)}`)
 ```
