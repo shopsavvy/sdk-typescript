@@ -12,3 +12,4 @@ coverage/
 # Build output — produced by `npm run build` (runs automatically via the `prepare`
 # script on `npm pack` / `npm publish` / git installs). Never commit it.
 dist/
+logs/
