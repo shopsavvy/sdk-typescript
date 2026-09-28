@@ -315,9 +315,11 @@ for (const product of amazonHistory.data) {
 #### Schedule Single Product Monitoring
 ```typescript
 // Monitor daily across all retailers
+// Sends PUT /v1/products/scheduled?ids=012345678901&schedule=daily
 const result = await api.scheduleProductMonitoring('012345678901', 'daily')
-if (result.data.scheduled) {
-  console.log('✅ Daily monitoring activated!')
+// `data` holds the scheduled product(s): the full product plus `schedule`
+for (const product of result.data) {
+  console.log(`✅ ${product.title}: refreshed ${product.schedule}`)
 }
 
 // Monitor hourly at specific retailer
@@ -326,7 +328,7 @@ const amazonResult = await api.scheduleProductMonitoring(
   'hourly',
   { retailer: 'amazon.com' } // a retailer domain
 )
-console.log(`Amazon monitoring: ${JSON.stringify(amazonResult.data)}`)
+console.log(`Amazon monitoring: ${amazonResult.data[0]?.retailer}`) // "amazon.com"
 ```
 
 #### Batch Monitoring Setup
@@ -340,13 +342,12 @@ const productsToMonitor = [
 
 const batchResult = await api.scheduleProductMonitoringBatch(productsToMonitor, 'daily')
 
-for (const item of batchResult.data) {
-  if (item.scheduled) {
-    console.log(`✅ Monitoring activated for ${item.identifier}`)
-  } else {
-    console.log(`❌ Failed to monitor ${item.identifier}`)
-  }
+// `data` holds the products that were found and scheduled; identifiers that
+// matched no product are simply left out (and not charged)
+for (const product of batchResult.data) {
+  console.log(`✅ Monitoring ${product.title} (${product.barcode ?? product.shopsavvy}) ${product.schedule}`)
 }
+console.log(`${batchResult.data.length}/${productsToMonitor.length} scheduled, ${batchResult.credits_used} credits`)
 ```
 
 #### Manage Scheduled Products
@@ -356,19 +357,17 @@ const scheduled = await api.getScheduledProducts()
 console.log(`📊 Currently monitoring ${scheduled.data.length} products:`)
 
 for (const product of scheduled.data) {
-  console.log(`🔔 ${product.identifier}`)
-  console.log(`   📅 Frequency: ${product.frequency}`)
-  console.log(`   🏪 Retailer: ${product.retailer || 'All retailers'}`)
-  console.log(`   📅 Created: ${product.created_at}`)
-  if (product.last_refreshed) {
-    console.log(`   🔄 Last refresh: ${product.last_refreshed}`)
-  }
+  console.log(`🔔 ${product.title} (${product.shopsavvy})`)
+  // `schedule` is absent for an interval the Data API has no label for
+  console.log(`   📅 Frequency: ${product.schedule ?? 'custom'}`)
+  console.log(`   🏪 Retailer: ${product.retailer ?? 'All retailers'}`)
   console.log('---')
 }
 
-// Remove products from monitoring
-await api.removeProductFromSchedule('012345678901')
-console.log('🗑️  Removed from monitoring')
+// Remove products from monitoring (DELETE /v1/products/scheduled?ids=...)
+// The response is { success, message, meta } — there is no `data`
+const removed = await api.removeProductFromSchedule('012345678901')
+console.log(`🗑️  ${removed.message}`)
 
 // Remove multiple products
 await api.removeProductsFromSchedule(['012345678901', 'B08N5WRWNW'])
@@ -438,7 +437,8 @@ async function findBestDeals(identifier: string, maxResults = 5): Promise<DealRe
     }
     
     // Filter and sort offers
-    const availableOffers = offers.data.filter(offer => offer.availability === 'in_stock')
+    // Availability values: "in", "out", "limited", "pre-order", "coming-soon", "discontinued" (omitted when unknown)
+    const availableOffers = offers.data.flatMap(p => p.offers).filter(offer => offer.availability === 'in')
     
     if (availableOffers.length === 0) {
       console.log('❌ No in-stock offers found')
@@ -540,7 +540,7 @@ class PriceAlertBot {
         if (offers.data.length === 0) continue
         
         // Find best available offer
-        const inStockOffers = offers.data.filter(o => o.availability === 'in_stock')
+        const inStockOffers = offers.data.flatMap(p => p.offers).filter(o => o.availability === 'in')
         if (inStockOffers.length === 0) continue
         
         const bestOffer = inStockOffers.reduce((min, offer) => 
@@ -779,9 +779,10 @@ async function bulkProductManager(csvData: BulkProductData[]): Promise<BulkAnaly
     for (let i = 0; i < csvData.length; i++) {
       const productData = csvData[i]
       const details = productDetails.data[i]
-      const offers = currentOffers.data[productData.identifier] || []
-      
-      const inStockOffers = offers.filter(o => o.availability === 'in_stock')
+      // getCurrentOffersBatch returns one entry per product found; match by ShopSavvy ID
+      const offers = currentOffers.data.find(p => p.shopsavvy === details?.shopsavvy)?.offers ?? []
+
+      const inStockOffers = offers.filter(o => o.availability === 'in')
       const bestPrice = inStockOffers.length > 0 
         ? Math.min(...inStockOffers.map(o => o.price)) 
         : null
@@ -1290,7 +1291,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     ])
 
     // Find best price
-    const inStockOffers = offers.data.filter(o => o.availability === 'in_stock')
+    const inStockOffers = offers.data.flatMap(p => p.offers).filter(o => o.availability === 'in')
     const bestOffer = inStockOffers.length > 0 
       ? inStockOffers.reduce((min, offer) => offer.price < min.price ? offer : min)
       : null
@@ -1530,7 +1531,7 @@ app.post('/api/product/scan', async (req, res) => {
     ])
 
     // Find best deals
-    const availableOffers = offers.data.filter(o => o.availability === 'in_stock')
+    const availableOffers = offers.data.flatMap(p => p.offers).filter(o => o.availability === 'in')
     const bestOffer = availableOffers.length > 0 
       ? availableOffers.reduce((min, offer) => offer.price < min.price ? offer : min)
       : null
@@ -1581,7 +1582,7 @@ app.post('/api/product/alerts', async (req, res) => {
     res.json({
       success: true,
       message: 'Price alert created successfully',
-      monitoring_active: result.data.scheduled
+      monitoring_active: result.data.length > 0
     })
 
   } catch (error) {
