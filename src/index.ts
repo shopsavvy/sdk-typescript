@@ -31,22 +31,24 @@ export interface ProductDetails {
   title: string
   /** ShopSavvy product ID */
   shopsavvy: string
+  // The core fields below are passed straight through from the product record, so
+  // the API sends an explicit JSON `null` (not an absent key) when one is unknown.
   /** Product brand */
-  brand?: string
+  brand?: string | null
   /** Product category */
-  category?: string
+  category?: string | null
   /** Product image URLs */
   images?: string[]
   /** Product barcode */
-  barcode?: string
+  barcode?: string | null
   /** Amazon ASIN */
-  amazon?: string
+  amazon?: string | null
   /** Product model number */
-  model?: string
+  model?: string | null
   /** Manufacturer part number */
-  mpn?: string
+  mpn?: string | null
   /** Product color */
-  color?: string
+  color?: string | null
   /** Shortened human-friendly title */
   title_short?: string
   /** URL-friendly slug */
@@ -77,7 +79,7 @@ export interface ProductDetails {
   /** @deprecated Use `shopsavvy` instead */
   get product_id(): string
   /** @deprecated Use `amazon` instead */
-  get asin(): string | undefined
+  get asin(): string | null | undefined
   /** @deprecated Use `images[0]` instead */
   get image_url(): string | undefined
 }
@@ -95,22 +97,25 @@ export interface ProductWithOffers extends ProductDetails {
 export interface Offer {
   /** Unique offer identifier */
   id: string
+  // `availability` is omitted entirely when unknown; the other fields are passed
+  // straight through from the offer record and arrive as JSON `null` when unset
+  // (`seller` is null on every first-party, non-marketplace offer).
   /** Retailer name */
-  retailer?: string
+  retailer?: string | null
   /** Offer price */
-  price?: number
-  /** Price currency */
-  currency?: string
-  /** Product availability */
+  price?: number | null
+  /** Price currency (ISO 4217) */
+  currency?: string | null
+  /** Product availability ("in" / "out"). Absent when unknown. */
   availability?: string
   /** Product condition */
-  condition?: string
+  condition?: string | null
   /** Link to product page */
-  URL?: string
+  URL?: string | null
   /** Marketplace seller name */
-  seller?: string
+  seller?: string | null
   /** Last update timestamp */
-  timestamp?: string
+  timestamp?: string | null
   /** Price history. Only populated by getPriceHistory(). */
   history?: PriceHistoryEntry[]
 
@@ -118,9 +123,9 @@ export interface Offer {
   /** @deprecated Use `id` instead */
   get offer_id(): string
   /** @deprecated Use `URL` instead */
-  get url(): string | undefined
+  get url(): string | null | undefined
   /** @deprecated Use `timestamp` instead */
-  get last_updated(): string | undefined
+  get last_updated(): string | null | undefined
 }
 
 /**
@@ -133,11 +138,13 @@ export interface Offer {
  * s28-t2-2 / s28-t2-3).
  */
 export interface PriceHistoryEntry {
-  /** ISO-8601 timestamp of the observation. */
+  /** ISO-8601 timestamp of the observation. Points arrive newest first. */
   timestamp: string
+  /** Always a positive number: the API drops archived points that carry no real price. */
   price: number
   /** The ISO 4217 currency the price is denominated in. Null on an archived point with no recorded currency — never assume a missing value means USD (ShopSavvy prospector-audit d5-t3-1). */
   currency?: string | null
+  /** "in" / "out". Absent when availability was unknown at that observation. */
   availability?: string
 }
 
@@ -150,7 +157,21 @@ export interface PriceHistoryEntry {
  * ever have read data out of it.
  */
 export interface OfferWithHistory extends Offer {
+  /** Newest first. Always present; empty when the window has no points (e.g. eBay listings never carry history). */
   history: PriceHistoryEntry[]
+}
+
+/**
+ * One product in a getPriceHistory() response: every product field (same as
+ * getProductDetails()), plus that product's offers, each carrying its `history`.
+ *
+ * `GET /products/offers/history` returns `data` as one entry PER PRODUCT — the same
+ * product-with-offers shape as getCurrentOffers(). Through 1.3.0 this SDK typed `data`
+ * as a flat `OfferWithHistory[]`, so `data[0].history` / `data[0].price` were always
+ * undefined and the real offers sat untyped under `data[0].offers`.
+ */
+export interface ProductWithOfferHistory extends ProductDetails {
+  offers: OfferWithHistory[]
 }
 
 export interface ScheduledProduct {
@@ -366,6 +387,9 @@ function addResponseAliases<T>(response: any): APIResponse<T> {
   return response
 }
 
+/** SDK version, sent in the User-Agent header. Keep in sync with package.json. */
+export const SDK_VERSION = '1.4.0'
+
 export class ShopSavvyDataAPI {
   private readonly apiKey: string
   private readonly baseUrl: string
@@ -397,7 +421,7 @@ export class ShopSavvyDataAPI {
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
-          'User-Agent': 'ShopSavvy-TypeScript-SDK/1.0.2',
+          'User-Agent': `ShopSavvy-TypeScript-SDK/${SDK_VERSION}`,
           ...options.headers,
         },
         signal: controller.signal,
@@ -600,11 +624,18 @@ export class ShopSavvyDataAPI {
    * @param startDate Start date (YYYY-MM-DD format)
    * @param endDate End date (YYYY-MM-DD format)
    * @param options Optional parameters
-   * @returns Offers with price history
+   * @returns One entry per product, each with its offers, each offer carrying `history` (newest first)
    *
    * @example
    * ```typescript
-   * const history = await api.getPriceHistory('012345678901', '2024-01-01', '2024-01-31')
+   * const result = await api.getPriceHistory('012345678901', '2024-01-01', '2024-01-31')
+   * for (const product of result.data) {
+   *   for (const offer of product.offers) {
+   *     for (const point of offer.history) {
+   *       console.log(`${product.title} @ ${offer.retailer}: ${point.price} ${point.currency ?? ''} on ${point.timestamp}`)
+   *     }
+   *   }
+   * }
    * ```
    */
   async getPriceHistory(
@@ -612,7 +643,7 @@ export class ShopSavvyDataAPI {
     startDate: string,
     endDate: string,
     options: { retailer?: string; format?: 'json' | 'csv' } = {}
-  ): Promise<APIResponse<OfferWithHistory[]>> {
+  ): Promise<APIResponse<ProductWithOfferHistory[]>> {
     // Wire params are `start`/`end` — that is what GET /products/offers/history
     // reads, and what the OpenAPI spec and public docs document. The old
     // `start_date`/`end_date` names came from the MCP tool's argument
@@ -625,11 +656,20 @@ export class ShopSavvyDataAPI {
       ...(options.format && { format: options.format }),
     })
 
-    const response = await this.request<OfferWithHistory[]>(`/products/offers/history?${params}`)
+    const response = await this.request<ProductWithOfferHistory[]>(`/products/offers/history?${params}`)
 
-    // Add aliases to each offer
+    // `data` is one entry per product, each with its offers — the same shape as
+    // getCurrentOffers(). Alias the products and their nested offers, and normalize
+    // `history` to an array so the non-optional type holds for every offer.
     if (response.data) {
-      response.data = response.data.map(addOfferAliases)
+      response.data = response.data.map(product => {
+        addProductAliases(product)
+        product.offers = (product.offers ?? []).map(offer => {
+          if (!Array.isArray(offer.history)) { offer.history = [] }
+          return addOfferAliases(offer)
+        })
+        return product
+      })
     }
 
     return response
@@ -898,7 +938,7 @@ export class ShopSavvyDataAPI {
  *
  * @example
  * ```typescript
- * import { createShopSavvyClient } from '@shopsavvy/data-api'
+ * import { createShopSavvyClient } from '@shopsavvy/sdk'
  *
  * const api = createShopSavvyClient({
  *   apiKey: 'ss_live_your_api_key_here'
