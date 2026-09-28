@@ -249,18 +249,42 @@ const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().
 
 const history = await api.getPriceHistory('012345678901', startDate, endDate)
 
-for (const offer of history.data) {
-  console.log(`🏪 ${offer.retailer}:`)
-  console.log(`   💰 Current price: $${offer.price}`)
-  console.log(`   📊 Historical points: ${offer.history.length}`)
-  
-  if (offer.history.length > 0) {
-    const prices = offer.history.map(point => point.price)
-    console.log(`   📉 Lowest: $${Math.min(...prices)}`)
-    console.log(`   📈 Highest: $${Math.max(...prices)}`)
-    console.log(`   📊 Average: $${(prices.reduce((a, b) => a + b, 0) / prices.length).toFixed(2)}`)
+// `data` has one entry per product (all the usual product fields), each with its
+// `offers`; every offer carries a `history` array of { timestamp, price, currency,
+// availability? } points, newest first.
+for (const product of history.data) {
+  console.log(`📦 ${product.title}`)
+
+  for (const offer of product.offers) {
+    console.log(`🏪 ${offer.retailer}:`)
+    console.log(`   💰 Current price: ${offer.price} ${offer.currency ?? ''}`)
+    console.log(`   📊 Historical points: ${offer.history.length}`)
+
+    if (offer.history.length > 0) {
+      const prices = offer.history.map(point => point.price)
+      console.log(`   📉 Lowest: $${Math.min(...prices)}`)
+      console.log(`   📈 Highest: $${Math.max(...prices)}`)
+      console.log(`   📊 Average: $${(prices.reduce((a, b) => a + b, 0) / prices.length).toFixed(2)}`)
+    }
+    console.log('---')
   }
-  console.log('---')
+}
+```
+
+`getPriceHistory` resolves to `APIResponse<ProductWithOfferHistory[]>`:
+
+```typescript
+interface ProductWithOfferHistory extends ProductDetails {
+  offers: OfferWithHistory[]            // every Offer field, plus…
+}
+interface OfferWithHistory extends Offer {
+  history: PriceHistoryEntry[]          // newest first; [] when there are no points (eBay never has history)
+}
+interface PriceHistoryEntry {
+  timestamp: string                     // ISO-8601
+  price: number
+  currency?: string | null              // ISO 4217; null if the archived point had none — don't assume USD
+  availability?: string                 // "in" | "out"; absent when unknown
 }
 ```
 
@@ -271,15 +295,17 @@ const amazonHistory = await api.getPriceHistory(
   '012345678901', 
   '2024-01-01', 
   '2024-01-31',
-  { retailer: 'amazon' }
+  { retailer: 'amazon.com' }
 )
 
-for (const offer of amazonHistory.data) {
-  console.log(`Amazon price trends for ${offer.retailer}:`)
-  // Last 10 data points
-  const recentHistory = offer.history.slice(-10)
-  for (const point of recentHistory) {
-    console.log(`  ${point.timestamp}: $${point.price} (${point.availability})`)
+for (const product of amazonHistory.data) {
+  for (const offer of product.offers) {
+    console.log(`${offer.retailer} price trend for ${product.title}:`)
+    // History is newest first, so the 10 most recent points are the first 10
+    const recentHistory = offer.history.slice(0, 10)
+    for (const point of recentHistory) {
+      console.log(`  ${point.timestamp}: ${point.price} ${point.currency ?? ''} (${point.availability ?? 'unknown'})`)
+    }
   }
 }
 ```
@@ -616,10 +642,13 @@ async function analyzeMarketTrends(identifiers: string[], days = 30): Promise<Ma
       
       const retailerStats: Record<string, RetailerStats> = {}
       
-      for (const offer of history.data) {
+      const offersWithHistory = history.data.flatMap(product => product.offers)
+
+      for (const offer of offersWithHistory) {
         if (offer.history.length === 0) continue
         
-        const prices = offer.history.map(point => point.price)
+        // History is newest first; reverse to oldest → newest for trend math
+        const prices = offer.history.map(point => point.price).reverse()
         const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length
         const variance = prices.reduce((a, b) => a + Math.pow(b - avgPrice, 2), 0) / prices.length
         
@@ -1422,9 +1451,10 @@ class BusinessIntelligenceDashboard {
 
         const history = await this.api.getPriceHistory(productId, startDate, endDate)
 
-        for (const offerHistory of history.data) {
+        for (const offerHistory of history.data.flatMap(product => product.offers)) {
           if (offerHistory.history.length > 0) {
-            const prices = offerHistory.history.map(p => p.price)
+            // History is newest first; reverse to oldest → newest for trend math
+            const prices = offerHistory.history.map(p => p.price).reverse()
             const trend = this.calculateTrendPercentage(prices)
             priceTrends.push(trend)
           }
