@@ -18,6 +18,8 @@ export interface ShopSavvyConfig {
  * API response metadata containing credit usage info
  */
 export interface APIMeta {
+  /** Request identifier — quote it in support requests */
+  request_id?: string
   credits_used: number
   credits_remaining: number
   rate_limit_remaining?: number
@@ -174,13 +176,38 @@ export interface ProductWithOfferHistory extends ProductDetails {
   offers: OfferWithHistory[]
 }
 
-export interface ScheduledProduct {
-  product_id: string
-  identifier: string
-  frequency: 'hourly' | 'daily' | 'weekly'
+/**
+ * A product on the caller's refresh schedule, as returned by scheduleProductMonitoring(),
+ * scheduleProductMonitoringBatch() and getScheduledProducts().
+ *
+ * The API returns the full product (the same fields as getProductDetails()) plus
+ * `schedule` and, when the schedule is limited to one retailer, `retailer`. Through 1.3.0
+ * this was typed as `{ product_id, identifier, frequency, created_at }` for the list and
+ * `{ scheduled, product_id }` for scheduling — keys the API has never sent.
+ */
+export interface ScheduledProduct extends ProductDetails {
+  /**
+   * Refresh frequency. On getScheduledProducts() it is absent for a product scheduled at an
+   * interval the Data API has no label for (e.g. a 4h/12h ShopSavvy Business schedule).
+   */
+  schedule?: 'hourly' | 'daily' | 'weekly'
+  /** Retailer domain the schedule is limited to. Absent when every retailer is refreshed. */
   retailer?: string
-  created_at: string
-  last_refreshed?: string
+}
+
+/**
+ * Response for endpoints that confirm an action without returning `data` — e.g.
+ * removeProductFromSchedule(), which the API answers with `{ success, message, meta }`.
+ */
+export interface MessageResponse {
+  success: boolean
+  /** Human-readable confirmation, e.g. "Products successfully removed from schedule" */
+  message?: string
+  meta?: APIMeta
+
+  // Convenience getters
+  get credits_used(): number
+  get credits_remaining(): number
 }
 
 /**
@@ -697,19 +724,20 @@ export class ShopSavvyDataAPI {
    * @param identifier Product identifier
    * @param frequency How often to refresh ('hourly', 'daily', 'weekly')
    * @param options Optional parameters
-   * @returns Scheduling confirmation
+   * @returns The scheduled product(s): full product fields plus `schedule` (and `retailer` if set)
    *
    * @example
    * ```typescript
-   * await api.scheduleProductMonitoring('012345678901', 'daily')
+   * const result = await api.scheduleProductMonitoring('012345678901', 'daily')
+   * for (const product of result.data) console.log(product.title, product.schedule)
    * ```
    */
   async scheduleProductMonitoring(
     identifier: string,
     frequency: 'hourly' | 'daily' | 'weekly',
     options: { retailer?: string } = {}
-  ): Promise<APIResponse<{ scheduled: boolean; product_id: string }>> {
-    return this.request(`/products/scheduled?${scheduleParams([identifier], frequency, options.retailer)}`, { method: 'PUT' })
+  ): Promise<APIResponse<ScheduledProduct[]>> {
+    return this.scheduleProductMonitoringBatch([identifier], frequency, options)
   }
 
   /**
@@ -718,20 +746,24 @@ export class ShopSavvyDataAPI {
    * @param identifiers Array of product identifiers
    * @param frequency How often to refresh
    * @param options Optional parameters
-   * @returns Scheduling confirmation for all products
+   * @returns The products that were found and scheduled (unknown identifiers are left out)
    */
   async scheduleProductMonitoringBatch(
     identifiers: string[],
     frequency: 'hourly' | 'daily' | 'weekly',
     options: { retailer?: string } = {}
-  ): Promise<APIResponse<Array<{ identifier: string; scheduled: boolean; product_id: string }>>> {
-    return this.request(`/products/scheduled?${scheduleParams(identifiers, frequency, options.retailer)}`, { method: 'PUT' })
+  ): Promise<APIResponse<ScheduledProduct[]>> {
+    const response = await this.request<ScheduledProduct[]>(`/products/scheduled?${scheduleParams(identifiers, frequency, options.retailer)}`, { method: 'PUT' })
+    if (response.data && Array.isArray(response.data)) {
+      response.data = response.data.map(product => addProductAliases(product) as ScheduledProduct)
+    }
+    return response
   }
 
   /**
    * Get all scheduled products
    *
-   * @returns List of scheduled products
+   * @returns Scheduled products: full product fields plus `schedule` (and `retailer` if set)
    *
    * @example
    * ```typescript
@@ -740,32 +772,39 @@ export class ShopSavvyDataAPI {
    * ```
    */
   async getScheduledProducts(): Promise<APIResponse<ScheduledProduct[]>> {
-    return this.request<ScheduledProduct[]>('/products/scheduled')
+    const response = await this.request<ScheduledProduct[]>('/products/scheduled')
+    if (response.data && Array.isArray(response.data)) {
+      response.data = response.data.map(product => addProductAliases(product) as ScheduledProduct)
+    }
+    return response
   }
 
   /**
    * Remove products from monitoring schedule
    *
    * @param identifier Product identifier to remove
-   * @returns Removal confirmation
+   * @returns Confirmation (`success`, `message`, `meta`); the API returns no `data`
    *
    * @example
    * ```typescript
-   * await api.removeProductFromSchedule('012345678901')
+   * const result = await api.removeProductFromSchedule('012345678901')
+   * console.log(result.success, result.message)
    * ```
    */
-  async removeProductFromSchedule(identifier: string): Promise<APIResponse<{ removed: boolean }>> {
-    return this.request(`/products/scheduled?${new URLSearchParams({ ids: identifier })}`, { method: 'DELETE' })
+  async removeProductFromSchedule(identifier: string): Promise<MessageResponse> {
+    return this.removeProductsFromSchedule([identifier])
   }
 
   /**
    * Remove multiple products from monitoring schedule
    *
    * @param identifiers Array of product identifiers to remove
-   * @returns Removal confirmation for all products
+   * @returns Confirmation (`success`, `message`, `meta`); the API returns no `data`
    */
-  async removeProductsFromSchedule(identifiers: string[]): Promise<APIResponse<Array<{ identifier: string; removed: boolean }>>> {
-    return this.request(`/products/scheduled?${new URLSearchParams({ ids: identifiers.join(',') })}`, { method: 'DELETE' })
+  async removeProductsFromSchedule(identifiers: string[]): Promise<MessageResponse> {
+    // The API answers with `{ success, message, meta }` — there is no `data`.
+    const response = await this.request<unknown>(`/products/scheduled?${new URLSearchParams({ ids: identifiers.join(',') })}`, { method: 'DELETE' })
+    return response as unknown as MessageResponse
   }
 
   /**
