@@ -1,8 +1,16 @@
 import { createShopSavvyClient } from './src/index'
 
+// Live smoke test against a real API. Never hardcode a key here: this repo is public.
+// Usage: SHOPSAVVY_API_KEY=ss_live_... [SHOPSAVVY_BASE_URL=http://localhost:4001/v1] bun run test-api.ts
+const apiKey = process.env.SHOPSAVVY_API_KEY
+if (!apiKey) {
+  console.error('Set SHOPSAVVY_API_KEY to run the live smoke test (get a key at https://shopsavvy.com/data).')
+  process.exit(1)
+}
+
 const api = createShopSavvyClient({
-  apiKey: 'ss_live_9c4ea2e04c5bf64048058359e3eb84a7',
-  baseUrl: 'http://localhost:4001/v1'
+  apiKey,
+  baseUrl: process.env.SHOPSAVVY_BASE_URL || 'https://api.shopsavvy.com/v1'
 })
 
 let failures = 0
