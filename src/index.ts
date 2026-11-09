@@ -91,6 +91,38 @@ export interface ProductDetails {
  */
 export interface ProductWithOffers extends ProductDetails {
   offers: Offer[]
+  /**
+   * In-store shelf prices read from receipts ShopSavvy app users scanned, labeled
+   * `source: "user-collected"`. Always present on getCurrentOffers() results; empty when none
+   * are on file. With `retailer`, only that retailer's stores.
+   */
+  in_store_prices: InStorePrice[]
+}
+
+/**
+ * A shelf price a physical store charged on a given day, read from a shopper's scanned
+ * receipt. It says what the store sold the product for that day, not that it is in stock now,
+ * so there is no availability. Nothing about the shopper is included.
+ */
+export interface InStorePrice {
+  /** Always "user-collected" */
+  source: 'user-collected'
+  /** Retailer name, e.g. "Kroger" */
+  retailer: string | null
+  store: {
+    /** Street address of the store */
+    address: string | null
+    latitude: number | null
+    longitude: number | null
+  }
+  /** Unit shelf price paid (the median when several receipts from the store agree) */
+  price: number
+  /** ISO 4217 currency of `price` */
+  currency: string
+  /** YYYY-MM-DD date of the most recent receipt behind this price */
+  observed_on: string | null
+  /** ISO 8601 time ShopSavvy last updated this price */
+  timestamp?: string | null
 }
 
 /**
@@ -347,6 +379,8 @@ export interface BatchResult {
   status: 'found' | 'not_found'
   product: ProductDetails | null
   offers?: Offer[]
+  /** With `include: ['offers']`: user-collected in-store prices (see InStorePrice). */
+  in_store_prices?: InStorePrice[]
   review?: TLDRReview | null
 }
 
@@ -431,7 +465,7 @@ function scheduleParams(identifiers: string[], frequency: string, retailer?: str
 }
 
 /** SDK version, sent in the User-Agent header. Keep in sync with package.json. */
-export const SDK_VERSION = '1.4.0'
+export const SDK_VERSION = '1.5.0'
 
 export class ShopSavvyDataAPI {
   private readonly apiKey: string
@@ -620,6 +654,8 @@ export class ShopSavvyDataAPI {
         if (product.offers) {
           product.offers = product.offers.map(addOfferAliases)
         }
+        // A server older than in-store prices omits the key; it is always an array here.
+        product.in_store_prices = product.in_store_prices ?? []
         return product
       })
     }
@@ -653,6 +689,8 @@ export class ShopSavvyDataAPI {
         if (product.offers) {
           product.offers = product.offers.map(addOfferAliases)
         }
+        // A server older than in-store prices omits the key; it is always an array here.
+        product.in_store_prices = product.in_store_prices ?? []
         return product
       })
     }
