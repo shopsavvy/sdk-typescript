@@ -464,8 +464,114 @@ function scheduleParams(identifiers: string[], frequency: string, retailer?: str
   })
 }
 
+/** The `error_detail` object the API attaches to every error response. */
+export interface APIErrorDetail {
+  code?: string
+  message?: string
+  action?: string
+  docs_url?: string
+}
+
+export interface APIErrorInit {
+  message: string
+  statusCode: number
+  code?: string | null
+  action?: string | null
+  docsUrl?: string | null
+  requestId?: string | null
+  retryAfterSeconds?: number | null
+}
+
+/**
+ * Base class for every error the API returns (any non-2xx response). `message` is the API's
+ * plain `error` string. Switch on `code`, not on the HTTP status: ERR_RATE_LIMIT and
+ * ERR_CREDITS_EXHAUSTED both arrive as HTTP 429.
+ */
+export class APIError extends Error {
+  /** HTTP status code */
+  readonly statusCode: number
+  /** `error_detail.code`, e.g. "ERR_RATE_LIMIT"; null when the server did not send one */
+  readonly code: string | null
+  /** One-line fix from `error_detail.action` */
+  readonly action: string | null
+  /** Link to the documentation for this code */
+  readonly docsUrl: string | null
+  /** `meta.request_id`; quote it in support requests */
+  readonly requestId: string | null
+  /** Seconds from the `Retry-After` header; only meaningful for ERR_RATE_LIMIT */
+  readonly retryAfterSeconds: number | null
+
+  constructor(init: APIErrorInit) {
+    super(init.message)
+    this.name = 'APIError'
+    this.statusCode = init.statusCode
+    this.code = init.code ?? null
+    this.action = init.action ?? null
+    this.docsUrl = init.docsUrl ?? null
+    this.requestId = init.requestId ?? null
+    this.retryAfterSeconds = init.retryAfterSeconds ?? null
+    Object.setPrototypeOf(this, new.target.prototype)
+  }
+}
+
+/** ERR_AUTH_MISSING / ERR_AUTH_INVALID / ERR_AUTH_REVOKED (HTTP 401) */
+export class AuthenticationError extends APIError {
+  constructor(init: APIErrorInit) { super(init); this.name = 'AuthenticationError' }
+}
+
+/** ERR_PRODUCT_NOT_FOUND / ERR_ENDPOINT_NOT_FOUND (HTTP 404) */
+export class NotFoundError extends APIError {
+  constructor(init: APIErrorInit) { super(init); this.name = 'NotFoundError' }
+}
+
+/** ERR_INVALID_PARAMS / ERR_IDENTIFIER_REQUIRED (HTTP 400) */
+export class ValidationError extends APIError {
+  constructor(init: APIErrorInit) { super(init); this.name = 'ValidationError' }
+}
+
+/** ERR_RATE_LIMIT, or a 429 with no code (older server): wait `retryAfterSeconds`, then retry. */
+export class RateLimitError extends APIError {
+  constructor(init: APIErrorInit) { super(init); this.name = 'RateLimitError' }
+}
+
+/**
+ * ERR_CREDITS_EXHAUSTED (HTTP 429): do NOT retry. Credits return when the billing period
+ * resets or the plan is upgraded. Deliberately not a RateLimitError.
+ */
+export class CreditsExhaustedError extends APIError {
+  constructor(init: APIErrorInit) { super(init); this.name = 'CreditsExhaustedError' }
+}
+
+function parseRetryAfter(value: string | null | undefined): number | null {
+  if (!value || !/^\d+$/.test(value.trim())) return null
+  return parseInt(value.trim(), 10)
+}
+
+function buildAPIError(response: Response, data: any): APIError {
+  const detail: APIErrorDetail = (data && typeof data.error_detail === 'object' && data.error_detail) || {}
+  const code = typeof detail.code === 'string' ? detail.code : null
+  const init: APIErrorInit = {
+    message: (data && data.error) || `HTTP ${response.status}: ${response.statusText}`,
+    statusCode: response.status,
+    code,
+    action: detail.action ?? null,
+    docsUrl: detail.docs_url ?? null,
+    requestId: data?.meta?.request_id ?? null,
+    retryAfterSeconds: parseRetryAfter(response.headers?.get?.('Retry-After')),
+  }
+  if (code === 'ERR_CREDITS_EXHAUSTED') return new CreditsExhaustedError(init)
+  if (code === 'ERR_RATE_LIMIT') return new RateLimitError(init)
+  if (code === null || code === undefined) {
+    if (response.status === 429) return new RateLimitError(init)
+  }
+  if (response.status === 401) return new AuthenticationError(init)
+  if (response.status === 404) return new NotFoundError(init)
+  if (response.status === 400) return new ValidationError(init)
+  return new APIError(init)
+}
+
 /** SDK version, sent in the User-Agent header. Keep in sync with package.json. */
-export const SDK_VERSION = '1.5.0'
+export const SDK_VERSION = '1.6.0'
 
 export class ShopSavvyDataAPI {
   private readonly apiKey: string
@@ -506,11 +612,13 @@ export class ShopSavvyDataAPI {
 
       clearTimeout(timeoutId)
 
-      const data = await response.json()
-
       if (!response.ok) {
-        throw new Error(data.error || `HTTP ${response.status}: ${response.statusText}`)
+        // An error body that is not JSON (proxy HTML page) still yields a typed error.
+        const errorBody = await response.json().catch(() => null)
+        throw buildAPIError(response, errorBody)
       }
+
+      const data = await response.json()
 
       return addResponseAliases(data)
     } catch (error) {
