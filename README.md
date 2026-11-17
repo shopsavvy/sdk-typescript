@@ -5,7 +5,7 @@
 [![Downloads](https://img.shields.io/npm/dm/@shopsavvy/sdk)](https://www.npmjs.com/package/@shopsavvy/sdk)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 
-**The most comprehensive TypeScript/JavaScript SDK for e-commerce product data and pricing intelligence.** 
+**TypeScript/JavaScript SDK for e-commerce product data and pricing intelligence.**
 
 Access real-time product information, pricing data, and historical trends across **tens of thousands of retailers** and **30M+ products** with the official [ShopSavvy Data API](https://shopsavvy.com/data).
 
@@ -27,32 +27,62 @@ bun add @shopsavvy/sdk
 
 ### Get Your API Key
 
-1. 🌟 Visit [shopsavvy.com/data](https://shopsavvy.com/data)
-2. 📝 Sign up for a free account
-3. 🔑 Get your API key from the dashboard
+1. 🌟 Visit [shopsavvy.com/data](https://shopsavvy.com/data) and start a plan
+2. 🔑 Get an API key at [shopsavvy.com/data/api-keys](https://shopsavvy.com/data/api-keys)
+3. Export it: `export SHOPSAVVY_API_KEY=ss_live_...`
 
 ### 30-Second Example
 
 ```typescript
 import { createShopSavvyClient } from '@shopsavvy/sdk'
 
-// Initialize the client
-const api = createShopSavvyClient({
-  apiKey: 'ss_live_your_api_key_here'
-})
+const api = createShopSavvyClient({ apiKey: process.env.SHOPSAVVY_API_KEY! })
 
-// Look up any product by barcode, ASIN, or URL
-const product = await api.getProductDetails('012345678901')
-console.log(`📦 ${product.data.name} by ${product.data.brand}`)
+// Keurig K-Mini, looked up by barcode
+const result = await api.getCurrentOffers('611247373064')
+const offers = result.data[0].offers.filter((o) => typeof o.price === 'number')
+const cheapest = offers.reduce((min, o) => (o.price! < min.price! ? o : min))
+console.log(`Cheapest: ${cheapest.price} ${cheapest.currency} at ${cheapest.retailer}`)
+```
 
-// Get current prices from all retailers
-const offers = await api.getCurrentOffers('012345678901')
-const cheapest = offers.data.reduce((min, offer) => offer.price < min.price ? offer : min)
-console.log(`💰 Best price: $${cheapest.price} at ${cheapest.retailer}`)
+### Errors, rate limits and credits
 
-// Set up price monitoring
-await api.scheduleProductMonitoring('012345678901', 'daily')
-console.log('🔔 Price alerts activated!')
+Every API error is thrown as an `APIError` (or a subclass: `AuthenticationError`, `NotFoundError`,
+`ValidationError`, `RateLimitError`, `CreditsExhaustedError`). Each carries `message` (the API's `error` text),
+`statusCode`, `code`, `action`, `docsUrl`, `requestId` and `retryAfterSeconds`. Switch on `code` or the class,
+not on the HTTP status: a rate limit and exhausted credits both arrive as HTTP 429.
+
+- `RateLimitError` (`ERR_RATE_LIMIT`): wait `retryAfterSeconds`, then retry.
+- `CreditsExhaustedError` (`ERR_CREDITS_EXHAUSTED`): do not retry. Credits return when the billing period resets or the plan is upgraded.
+
+The SDK never retries on its own.
+
+```typescript
+import { createShopSavvyClient, APIError, RateLimitError, CreditsExhaustedError } from '@shopsavvy/sdk'
+
+const api = createShopSavvyClient({ apiKey: process.env.SHOPSAVVY_API_KEY! })
+
+async function getOffers(barcode: string) {
+  try {
+    return await api.getCurrentOffers(barcode)
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      await new Promise((r) => setTimeout(r, (error.retryAfterSeconds ?? 1) * 1000))
+      return await api.getCurrentOffers(barcode) // retry once
+    }
+    if (error instanceof CreditsExhaustedError) {
+      console.error('Credits are used up. Retrying will not help; wait for the reset or upgrade the plan.')
+      return null
+    }
+    if (error instanceof APIError) {
+      console.error(`${error.code}: ${error.message}`)
+      console.error(`Fix: ${error.action}`)
+      console.error(`Docs: ${error.docsUrl}`)
+      return null
+    }
+    throw error
+  }
+}
 ```
 
 ---
